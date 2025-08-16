@@ -15,7 +15,7 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 > 
 > Ze względu na układ pakiet dedykowany jest dla motywu luci-theme-bootstrap.   
 
-### Supported usb devices:
+### Supported usb devices (requires updating):
 ``` bash
 03f0581d - # Huawei ME906s-158
 03f0a31d - # Huawei ME906s-158
@@ -41,6 +41,7 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 19d21275 - # ZTE ZM8630A
 19d21432 - # ZTE MF286A
 19d21432 - # ZTE MF286A
+19d21485 - # ZTE MF286D
 19d21485 - # ZTE MF289F
 19d21489 - # ZTE MF286R
 1bc71040 - # Telit LM940
