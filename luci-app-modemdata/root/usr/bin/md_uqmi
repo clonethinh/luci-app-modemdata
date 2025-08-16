@@ -1,0 +1,32 @@
+#!/bin/sh
+
+#
+# (c) 2025 Cezary Jackiewicz <cezary@eko.one.pl>
+#
+# (c) 2025 modified by Rafał Wabik - IceG - From eko.one.pl forum
+#
+
+. /lib/functions.sh
+. /usr/share/libubox/jshn.sh
+
+RES="/usr/share/modemdata"
+
+device=$1
+network=$2
+forced_plmn=$3
+mbim=$4
+
+parse_section() {
+	echo "["
+	$RES/product_qmi.sh "$device"
+	echo ","
+	$RES/network.sh "$network"
+	echo ","
+	$RES/params_qmi.sh "$device" "$forced_plmn" "$mbim"
+	echo "]"
+}
+
+config_load modemdata
+parse_section modemdata
+
+exit 0
