@@ -249,7 +249,7 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 # Quectel RG502Q-EA
 # Quectel RM500U-CNV
 # Quectel RM520N-GL
-# Quectel RM520N-GL
+# Quectel RM520N-GLAP
 
 17cb5201
 # Quectel RG500Q-EA
