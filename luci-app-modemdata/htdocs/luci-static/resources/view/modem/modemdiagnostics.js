@@ -17,7 +17,7 @@ let commandOutputDialog = baseclass.extend({
   __init__: function(title, content){ this.title = title; this.content = content; },
 
   render: function(){
-    var self = this;
+    let self = this;
 
     ui.showModal(this.title, [
       E('p', _('Command result')),
@@ -45,8 +45,8 @@ let commandOutputDialog = baseclass.extend({
         E('button', {
           'class': 'cbi-button cbi-button-apply important',
           'click': ui.createHandlerFn(this, function(){
-            var blob = new Blob([self.content], { type: 'text/plain' });
-            var link = document.createElement('a');
+            let blob = new Blob([self.content], { type: 'text/plain' });
+            let link = document.createElement('a');
             link.download = 'debug_result.txt';
             link.href = URL.createObjectURL(blob);
             link.click();

@@ -153,12 +153,14 @@ band5g() {
 getdevicevendorproduct() {
 	devname="$(basename $1)"
 	case "$devname" in
-	        'mhi_DUN'*)
+		'mhi_DUN'*)
 			devpath=$(find /sys/devices -name "$devname" -type d 2>/dev/null | head -1)
-			target_dir=${devpath%/*/*/*}
-			V=$(cat "$target_dir/vendor")
-			D=$(cat "$target_dir/device")
-			echo "pci/${V/0x/}${D/0x/}"
+			T=${devpath%/*/*/*}
+			if [ -e $T/vendor ] && [ -e $T/device ]; then
+				V=$(cat $T/vendor)
+				D=$(cat $T/device)
+				echo "pci/${V/0x/}${D/0x/}"
+			fi
 			;;
 		'wwan'*'at'*)
 			devpath="$(readlink -f /sys/class/wwan/$devname/device)"
@@ -232,8 +234,8 @@ TCOPS=$(echo "$O" | awk -F[\"] '/^\+COPS:\s*.,0/ {print $2}')
 
 if [ -z "$COPS" ]; then
 	if [ -n "$COPS_NUM" ]; then
-		COPS=$(awk -F[\;] '/^'$COPS_NUM';/ {print $3}' $RES/mccmnc.dat | xargs)
-		COUNTRY=$(awk -F[\;] '/^'$COPS_NUM';/ {print $2}' $RES/mccmnc.dat)
+		COPS=$(awk -F[\;] '/^'$COPS_NUM';/ {print $3}' $RES/mccmncmax.dat | xargs)
+		COUNTRY=$(awk -F[\;] '/^'$COPS_NUM';/ {print $2}' $RES/mccmncmax.dat)
 	fi
 fi
 [ -z "$COPS" ] && COPS=$COPS_NUM

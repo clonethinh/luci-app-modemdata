@@ -13,7 +13,7 @@
   MIT License
 */
 
-var pkg = {
+let pkg = {
     get Name() { return 'modemdata'; },
     get URL()  { return 'https://openwrt.org/packages/pkgdata/' + pkg.Name + '/'; },
 

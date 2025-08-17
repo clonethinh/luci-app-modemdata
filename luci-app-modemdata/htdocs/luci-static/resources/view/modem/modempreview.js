@@ -35,8 +35,8 @@ function setUpdateMessage(el, sec) {
     return;
   }
 
-  var tmpl = _('Updating again in %s second(s).');
-  var parts = String(tmpl).split('%s');
+  let tmpl = _('Updating again in %s second(s).');
+  let parts = String(tmpl).split('%s');
   el.textContent = '';
   el.appendChild(document.createTextNode(parts[0] || ''));
   el.appendChild(E('b', {}, String(sec)));
@@ -242,22 +242,22 @@ function checkOperatorName(t) {
 async function handleDownloadAction(ev) {
   if (ev !== 'godownload') return;
 
-  var activeTab = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
+  let activeTab = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
   if (!activeTab) return;
 
-  var tabIndex = String(activeTab.getAttribute('data-tab') || '').replace('tab', '');
-  var cellElement = document.getElementById('cell_' + tabIndex);
-  var providerElement = document.getElementById('operator_' + tabIndex);
-  var providerValue = providerElement ? (providerElement.textContent || '').trim().toLowerCase() : '';
+  let tabIndex = String(activeTab.getAttribute('data-tab') || '').replace('tab', '');
+  let cellElement = document.getElementById('cell_' + tabIndex);
+  let providerElement = document.getElementById('operator_' + tabIndex);
+  let providerValue = providerElement ? (providerElement.textContent || '').trim().toLowerCase() : '';
 
   if (!cellElement) return;
 
-  var cellValue = (cellElement.textContent || '').trim();
-  var parts = cellValue.split(/\s+/);
-  var hexPart = parts.length > 1 ? parts[1] : '';
-  var cellHEXNumeric = hexPart ? hexPart.replace(/[()]/g, '') : '';
+  let cellValue = (cellElement.textContent || '').trim();
+  let parts = cellValue.split(/\s+/);
+  let hexPart = parts.length > 1 ? parts[1] : '';
+  let cellHEXNumeric = hexPart ? hexPart.replace(/[()]/g, '') : '';
 
-  var searchsite = '';
+  let searchsite = '';
   switch (providerValue) {
     case 't-mobile': searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=1&mode=std'; break;
     case 'orange':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=2&mode=std'; break;
@@ -873,7 +873,7 @@ return view.extend({
 
     if (!Array.isArray(sections) || sections.length === 0) {
 
-      var modemsModal = baseclass.extend({
+      let modemsModal = baseclass.extend({
         __init__: function() {
           this.title = _('No Modems Detected...');
           this.description = _('Oops.. there are no modems in settings. You will be redirected to a tab where you can define the installed modem(s).');
@@ -882,8 +882,8 @@ return view.extend({
         },
 
         startCountdown: function() {
-          var self = this;
-          var countdownLabel = document.getElementById('countdownLabel');
+          let self = this;
+          let countdownLabel = document.getElementById('countdownLabel');
           this.timer = setInterval(function() {
             self.countdown--;
             if (self.countdown > 0) {
@@ -892,7 +892,7 @@ return view.extend({
               clearInterval(self.timer);
               countdownLabel.textContent = _('Redirecting...');
 
-              var pkg = {
+              let pkg = {
                 get modemdefURI() {
                   return 'admin/modem/modemdata/modemdefine';
                 }
@@ -914,7 +914,7 @@ return view.extend({
         }
       });
 
-      var modemDialog = new modemsModal();
+      let modemDialog = new modemsModal();
       modemDialog.render();
 
       return E([

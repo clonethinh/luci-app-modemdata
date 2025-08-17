@@ -1,14 +1,14 @@
 #
 # Copyright 2025 Rafał Wabik - IceG - From eko.one.pl forum
 #
-# Licensed to the MIT License.
+# MIT License.
 #
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-modemdata
-PKG_VERSION:=1.0.6
-PKG_RELEASE:=20250816
+PKG_VERSION:=1.0.7
+PKG_RELEASE:=20250817
 LUCI_TITLE:=LuCI JS Support for modemdata application
 MAINTAINER:=Rafał Wabik <4Rafal@gmail.com>
 LUCI_DESCRIPTION:=Detailed information about the cellular modem and parameters of the mobile internet connection.

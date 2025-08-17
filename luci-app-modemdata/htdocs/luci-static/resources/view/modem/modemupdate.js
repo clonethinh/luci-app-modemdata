@@ -44,12 +44,12 @@ function handleOpen(ev) {
 	}
 }
 
-var ModemDataInfo = form.DummyValue.extend({
+let ModemDataInfo = form.DummyValue.extend({
 	load: function() {
-		var author = _('%sCezary Jackiewicz (obsy)%s.')
+		let author = _('%sCezary Jackiewicz (obsy)%s.')
 			.format('<a href="https://github.com/obsy" target="_blank">', '</a>');
 
-		var luci_author = _('%sRafał Wabik (IceG)%s.')
+		let luci_author = _('%sRafał Wabik (IceG)%s.')
 			.format('<a href="https://github.com/4IceG" target="_blank">', '</a>');
 
 		return E([
@@ -152,9 +152,9 @@ var ModemDataInfo = form.DummyValue.extend({
 	}
 });
 
-var Troubleshooting = form.DummyValue.extend({
+let Troubleshooting = form.DummyValue.extend({
 	load: function() {
-            var help1 = '<em>'+_('Go to the Diagnostics tab and run a script check. Most often, the error is caused by a strange operator name. To fix this, select the Force PLMN from file option if it is available in the modem configuration options.')+'</em>';
+            let help1 = '<em>'+_('Go to the Diagnostics tab and run a script check. Most often, the error is caused by a strange operator name. To fix this, select the Force PLMN from file option if it is available in the modem configuration options.')+'</em>';
 		return E([
 			E('div', { 'class': 'cbi-section' }, [
 				E('h5', _('If data in LuCI is not visible, and we are 100% sure that the modem has been defined/configured correctly.')),
