@@ -17,19 +17,25 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 > [!IMPORTANT]
 > Required Packages:
-> kmod-usb-serial, kmod-usb-net, kmod-usb-serial-wwan, kmod-usb-serial-option, kmod-usb-core, kmod-usb2, usb-modeswitch
 > 
 > serial:
-> sms-tool
+> sms-tool, kmod-usb-serial-option, kmod-usb-serial
 > 
 > QMI/MBIM protocol:
-> kmod-usb-net-qmi-wwan/kmod-usb-net-cdc-mbim, uqmi
+> kmod-usb-net-qmi-wwan / kmod-usb-net-cdc-mbim, uqmi
 >
 > ModemManager protocol:
-> luci-proto-modemmanager, modemmanager
+> modemmanager
 >
 > hilink (ecm):
 > wget-ssl
+
+### To do with the next update:
+
+- [ ] Limit the choice of data reading methods to packages installed on the system.
+- [ ] Add the ability to verify/install required packages.
+- [ ] [Modemdata package update](https://github.com/obsy/modemdata/commit/55b93db75afe6ab8ab3ec0576357a0770c754ecd).
+- [ ] ..
 
 
 ### Supported usb devices:
