@@ -15,7 +15,11 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 > 
 > Ze względu na układ pakiet dedykowany jest dla motywu luci-theme-bootstrap.   
 
-### Supported usb devices (requires updating):
+### Supported usb devices:
+
+<details>
+   <summary>Pokaż | Show me</summary>
+
 ``` bash
 03f0581d
 # Huawei E3272/E3276
@@ -227,7 +231,14 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 8087095a
 # Fibocom L860
 ```
+</details>
+
 ### Supported pci devices:
+
+
+<details>
+   <summary>Pokaż | Show me</summary>
+
 ``` bash
 105be0b0
 # Dell DW5930e
@@ -248,6 +259,8 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 1eac1004
 # Quectel RM520N-GLAP
 ```
+</details>
+
 
 ### <img src="https://raw.githubusercontent.com/4IceG/Personal_data/master/dooffy_design_icons_EU_flags_United_Kingdom.png" height="24"> Design concept / <img src="https://raw.githubusercontent.com/4IceG/Personal_data/master/dooffy_design_icons_EU_flags_Poland.png" height="24"> Koncepcja wyglądu
 
