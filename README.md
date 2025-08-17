@@ -13,7 +13,24 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 > [!IMPORTANT]
 > Due to the layout, the package is dedicated to the luci-theme-bootstrap.
 > 
-> Ze względu na układ pakiet dedykowany jest dla motywu luci-theme-bootstrap.   
+> Ze względu na układ pakiet dedykowany jest dla motywu luci-theme-bootstrap.
+
+> [!IMPORTANT]
+> Required Packages:
+> kmod-usb-serial, kmod-usb-net, kmod-usb-serial-wwan, kmod-usb-serial-option, kmod-usb-core, kmod-usb2, usb-modeswitch
+> 
+> serial:
+> sms-tool
+> 
+> QMI/MBIM protocol:
+> kmod-usb-net-qmi-wwan, uqmi
+>
+> ModemManager protocol:
+> luci-proto-modemmanager, modemmanager
+>
+> hilink (ecm):
+> wget-ssl
+
 
 ### Supported usb devices:
 
