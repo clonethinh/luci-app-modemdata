@@ -23,7 +23,7 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 > sms-tool
 > 
 > QMI/MBIM protocol:
-> kmod-usb-net-qmi-wwan, uqmi
+> kmod-usb-net-qmi-wwan/kmod-usb-net-cdc-mbim, uqmi
 >
 > ModemManager protocol:
 > luci-proto-modemmanager, modemmanager
