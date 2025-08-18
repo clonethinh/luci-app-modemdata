@@ -30,14 +30,6 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 > hilink (ecm):
 > wget-ssl
 
-### To do with the next update:
-
-- [ ] Limit the choice of data reading methods to packages installed on the system.
-- [ ] Add the ability to verify/install required packages.
-- [ ] [Modemdata package update](https://github.com/obsy/modemdata/commit/55b93db75afe6ab8ab3ec0576357a0770c754ecd).
-- [ ] ..
-
-
 ### Supported usb devices:
 
 <details>
