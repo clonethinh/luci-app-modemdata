@@ -290,9 +290,9 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 > "Defined modems" window / Okno zdefiniowanych modem(-ów):
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/m3x.png?raw=true)
 
-> "Defined modems" window / Okno zdefiniowanych modem(-ów):
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/m3tr.png?raw=true)
 
 ![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3b.png?raw=true)
 
