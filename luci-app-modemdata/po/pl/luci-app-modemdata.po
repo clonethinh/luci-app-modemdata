@@ -604,4 +604,16 @@ msgstr "Sugerowane rozwiązanie"
 msgid "Troubleshooting"
 msgstr "Rozwiązywanie problemów"
 
+msgid "Please select method for reading data from the modem and install the necessary packages."
+msgstr "Proszę wybrać metodę odczytu danych z modemu oraz zainstalować niezbędne pakiety."
+
+msgid "Required packages"
+msgstr "Wymagane pakiety"
+
+msgid "Check required packages"
+msgstr "Sprawdź wymagane pakiety"
+
+msgid "Before configuring the modem, check if all required packages are installed in the system."
+msgstr "Przed skonfigurowaniem modemu sprawdź, czy wszystkie wymagane pakiety są zainstalowane w systemie."
+
 

@@ -30,7 +30,10 @@
 				"/dev": [ "list" ],
 				"/etc/defmodems": [ "read" ],
 				"/etc/modem/modemlist.json": [ "read" ],
-				"/usr/libexec/package-manager-call list-installed": ["exec"]
+				"/usr/libexec/package-manager-call list-installed": [ "exec" ],
+				"/usr/libexec/opkg-list installed": [ "exec" ],
+				"/usr/libexec/opkg-call list-installed": [ "exec" ],
+				"/etc/opkg.conf": [ "read" ]
 			},
 			"uci": [ "modemdata" , "defmodems" ]
 		},

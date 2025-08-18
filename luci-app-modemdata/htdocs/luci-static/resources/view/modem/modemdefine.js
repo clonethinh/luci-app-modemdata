@@ -32,12 +32,42 @@ return view.extend({
     return Promise.all([
       L.resolveDefault(fs.list('/dev'), null),
       L.resolveDefault(fs.read_direct('/sys/kernel/debug/usb/devices', ['-r'])),
-      L.resolveDefault(fs.exec_direct('/usr/bin/mmcli', ['-L', '-J']), null)
+      L.resolveDefault(fs.exec_direct('/usr/bin/mmcli', ['-L', '-J']), null),
+      this.checkPackages()
     ]);
   },
 
+  pkg: {
+    get Name() { return 'defmodems'; },
+    get URL()  { return 'https://openwrt.org/packages/pkgdata/' + this.Name + '/'; },
+    get pkgMgrURINew() { return 'admin/system/package-manager'; },
+    get pkgMgrURIOld() { return 'admin/system/opkg'; },
+
+    bestPkgMgrURI: function () {
+      return L.resolveDefault(
+        fs.stat('/www/luci-static/resources/view/system/package-manager.js'), null
+      ).then(function (st) {
+        if (st && st.type === 'file')
+          return 'admin/system/package-manager';
+        return L.resolveDefault(fs.stat('/usr/libexec/package-manager-call'), null)
+          .then(function (st2) {
+            return st2 ? 'admin/system/package-manager' : 'admin/system/opkg';
+          });
+      }).catch(function () { return 'admin/system/opkg'; });
+    },
+
+    openInstallerSearch: function (query) {
+      let self = this;
+      return self.bestPkgMgrURI().then(function (uri) {
+        let q = query ? ('?query=' + encodeURIComponent(query)) : '';
+        window.open(L.url(uri) + q, '_blank', 'noopener');
+      });
+    }
+  },
+
   fileModemDialog: baseclass.extend({
-    __init__: function (file, title, description, callback, fileExists = false) {
+    __init__: function (file, title, description, callback, fileExists) {
+      if (fileExists === undefined) fileExists = false;
       this.file = file;
       this.title = title;
       this.description = description;
@@ -49,25 +79,23 @@ return view.extend({
       return L.resolveDefault(fs.read(this.file), '');
     },
 
-    handleSave: function (ev) {
+    handleSave: function () {
       let textarea = document.getElementById('widget.modal_content');
       let value = textarea.value.trim().replace(/\r\n/g, '\n') + '\n';
 
       return fs.write(this.file, value)
-        .then(rc => {
+        .then(function (rc) {
           textarea.value = value;
-          popTimeout(null, E('p', _('Contents have been saved.')), 5000, 'info');
-          if (this.callback) {
-            return this.callback(rc);
-          }
+//          popTimeout(null, E('p', _('Contents have been saved.')), 5000, 'info');
+          return rc;
         })
-        .catch(e => {
+        .catch(function (e) {
           ui.addNotification(
             null,
             E('p', _('Unable to save the contents') + ': %s'.format(e.message))
           );
         })
-        .finally(() => {
+        .finally(function () {
           ui.hideModal();
         });
     },
@@ -90,15 +118,16 @@ return view.extend({
     },
 
     show: function () {
+      let self = this;
       ui.showModal(null, E('p', { 'class': 'spinning' }, _('Loading')));
       this.load()
-        .then(content => {
+        .then(function (content) {
           ui.hideModal();
-          return this.render(content);
+          return self.render(content);
         })
-        .catch(e => {
+        .catch(function (e) {
           ui.hideModal();
-          return this.error(e);
+          return self.error(e);
         });
     },
 
@@ -124,12 +153,102 @@ return view.extend({
     }
   }),
 
+  packageDialog: baseclass.extend({
+    __init__: function (installedList, pkgHelper) {
+      this.installed = Array.isArray(installedList) ? installedList : [];
+      this.pkgHelper = pkgHelper;
+
+      this.sections = {
+        serial: [
+          { name: 'sms-tool', label: 'sms-tool' },
+          { name: 'kmod-usb-serial', label: 'kmod-usb-serial' },
+          { name: 'kmod-usb-serial-option', label: 'kmod-usb-serial-option' }
+        ],
+        ecm: [
+          { name: 'wget-ssl', label: 'wget-ssl' }
+        ],
+        uqmi: [
+          { name: 'uqmi', label: 'uqmi' },
+          { name: 'kmod-usb-net-qmi-wwan', label: 'kmod-usb-net-qmi-wwan' },
+          { name: 'kmod-usb-net-cdc-mbim', label: 'kmod-usb-net-cdc-mbim' }
+        ],
+        ModemManager: [
+          { name: 'modemmanager', label: 'modemmanager' }
+        ]
+      };
+    },
+
+    _isInstalled: function (name) {
+      let list = this.installed || [];
+      return list.find(function (s) { return s && s.indexOf(name) !== -1; }) ? true : false;
+    },
+
+    _row: function (pkgName, installed) {
+      let title = E('label', { 'class': 'cbi-value-title' }, pkgName);
+      let btn = installed
+        ? E('button', { 'class': 'edit btn', 'disabled': true }, _('Installed'))
+        : E('button', {
+            'class': 'btn cbi-button-positive',
+            'click': (function (name, ctx) { return function () { ctx.pkgHelper.openInstallerSearch(name); }; })(pkgName, this)
+          }, _('Install…'));
+
+      let field = E('div', { 'class': 'cbi-value-field' }, [ btn ]);
+      return E('div', { 'class': 'cbi-value' }, [ title, field ]);
+    },
+
+    _sectionHeader: function (text) {
+      return E('div', {}, [ E('h4', {}, text) ]);
+    },
+
+    show: function () {
+      let sectionOrder = ['serial', 'ecm', 'uqmi', 'ModemManager'];
+      let content = [];
+
+      content.push(E('p', {}, _('Please select method for reading data from the modem and install the necessary packages.')));
+
+      for (let si = 0; si < sectionOrder.length; si++) {
+        let key = sectionOrder[si];
+        let pkgs = this.sections[key];
+        if (!pkgs || pkgs.length === 0) continue;
+
+        content.push(this._sectionHeader(_(key)));
+
+        for (let i = 0; i < pkgs.length; i++) {
+          let p = pkgs[i];
+          let installed = this._isInstalled(p.name);
+          content.push(this._row(p.label, installed));
+        }
+      }
+
+      let footer = E('div', { 'class': 'right' }, [
+        E('button', { 'class': 'btn', 'click': ui.hideModal }, _('Dismiss'))
+      ]);
+      content.push(footer);
+
+      ui.showModal(_('Required packages'), content, 'cbi-modal');
+    }
+  }),
+
+  checkPackages: function() {
+    return fs.exec_direct('/usr/bin/opkg', ['list-installed'], 'text').catch(function () {
+      return fs.exec_direct('/usr/libexec/package-manager-call', ['list-installed'], 'text').catch(function () {
+        return '';
+      });
+    }).then(function (data) {
+      data = (data || '').trim();
+      return data ? data.split('\n') : [];
+    });
+  },
+
   render: function (data) {
     let showModemDialog = new this.fileModemDialog(
       this.modemPath,
       _('Modems found'),
-      _("List of found modems. Not all modems may be shown."),
+      _("List of found modems. Not all modems may be shown.")
     );
+
+    let installedList = Array.isArray(data[3]) ? data[3] : [];
+    let showPackageDialog = new this.packageDialog(installedList, this.pkg);
 
     fs.write('/etc/modem/modemlist.json', '');
 
@@ -137,11 +256,12 @@ return view.extend({
       return line.replace(/^<\d+>/, '');
     });
     let devslist = dlines.join('\n');
-    const alldevs = devslist.split('\n\n');
-    const results = [];
+    let alldevs = devslist.split('\n\n');
+    let results = [];
 
-    for (const modem of alldevs) {
-      const lines = modem.split('\n');
+    for (let ai = 0; ai < alldevs.length; ai++) {
+      let modem = alldevs[ai];
+      let lines = modem.split('\n');
       let vendor = '';
       let pid = '';
       let manufacturer = '';
@@ -150,56 +270,56 @@ return view.extend({
       let driver = '';
       let bus = '';
 
-      for (const line of lines) {
-        if (line.includes('Driver=hub') || line.includes('Driver=usb-storage') || line.includes('Driver=usblp')) {
+      for (let li = 0; li < lines.length; li++) {
+        let line = lines[li];
+        if (line.indexOf('Driver=hub') !== -1 || line.indexOf('Driver=usb-storage') !== -1 || line.indexOf('Driver=usblp') !== -1) {
           driver = line.split('Driver=')[1].trim();
           break;
         }
-        if (line.includes('Spd=')) {
-          const match = line.match(/Spd=([^ ]+)/);
-          if (match && match[1]) bus = match[1].trim();
+        if (line.indexOf('Spd=') !== -1) {
+          let mSpd = line.match(/Spd=([^ ]+)/);
+          if (mSpd && mSpd[1]) bus = mSpd[1].trim();
         }
-        if (line.includes('Vendor=')) {
-          const match = line.match(/Vendor=([^ ]+)/);
-          if (match && match[1]) vendor = match[1].trim();
+        if (line.indexOf('Vendor=') !== -1) {
+          let mVen = line.match(/Vendor=([^ ]+)/);
+          if (mVen && mVen[1]) vendor = mVen[1].trim();
         }
-        if (line.includes('ProdID=')) {
-          const match = line.match(/ProdID=([^ ]+)/);
-          if (match && match[1]) pid = match[1].trim();
+        if (line.indexOf('ProdID=') !== -1) {
+          let mPid = line.match(/ProdID=([^ ]+)/);
+          if (mPid && mPid[1]) pid = mPid[1].trim();
         }
-        if (line.includes('Manufacturer=')) {
-          const match = line.match(/Manufacturer=(.*)/);
-          if (match && match[1]) manufacturer = match[1].trim();
+        if (line.indexOf('Manufacturer=') !== -1) {
+          let mMan = line.match(/Manufacturer=(.*)/);
+          if (mMan && mMan[1]) manufacturer = mMan[1].trim();
         }
-        if (line.includes('Product=')) {
-          const match = line.match(/Product=(.*)/);
-          if (match && match[1]) product = match[1].trim();
+        if (line.indexOf('Product=') !== -1) {
+          let mPro = line.match(/Product=(.*)/);
+          if (mPro && mPro[1]) product = mPro[1].trim();
         }
-        if (line.includes('SerialNumber=')) {
-          const match = line.match(/SerialNumber=(.*)/);
-          if (match && match[1]) serialnumber = match[1].trim();
+        if (line.indexOf('SerialNumber=') !== -1) {
+          let mSn = line.match(/SerialNumber=(.*)/);
+          if (mSn && mSn[1]) serialnumber = mSn[1].trim();
         }
       }
 
       if (driver === '' && (manufacturer !== '' || product !== '')) {
-        const result = {
+        results.push({
           Manufacturer:  manufacturer,
           Product:       product,
           Vendor:        vendor,
           ProdID:        pid,
           Bus_speed:     bus,
           Serial_Number: serialnumber
-        };
-        results.push(result);
+        });
       }
     }
 
-    const outputJSON = JSON.stringify(results, null, 2);
+    let outputJSON = JSON.stringify(results, null, 2);
     let countm = Object.keys(results).length;
 
     fs.write('/etc/modem/modemlist.json', outputJSON + '\n');
 
-    let m, s, o, snr;
+    let m, s, o;
 
     m = new form.Map('defmodems', _('Defined modems'),
       _('Interface to define the available modems. The list of modems will make it easier for the user to switch between modems in LuCI.')
@@ -212,9 +332,16 @@ return view.extend({
     o = s.option(form.Button, '_show_modem_btn', _('Show modems found'),
       _('Currently, only modems connected via USB are searched for.')
     );
-    o.onclick = () => showModemDialog.show();
+    o.onclick = function () { showModemDialog.show(); };
     o.inputtitle = _('Show');
     o.inputstyle = 'edit btn';
+
+    o = s.option(form.Button, '_show_package_btn', _('Check required packages'),
+      _('Before configuring the modem, check if all required packages are installed in the system.')
+    );
+    o.onclick = function () { showPackageDialog.show(); };
+    o.inputtitle = _('Check');
+    o.inputstyle = 'cbi-button cbi-button-negative important';
 
     s = m.section(form.GridSection, 'defmodems', _('Modem(s)'));
     s.anonymous = true;
@@ -231,8 +358,8 @@ return view.extend({
        <br />The modem name is only searched for modems connected via USB.")
     );
 
-    for (let i = 0; i < countm; i++) {
-      o.value(results[i].Manufacturer + ' ' + results[i].Product);
+    for (let i2 = 0; i2 < countm; i2++) {
+      o.value(results[i2].Manufacturer + ' ' + results[i2].Product);
     }
     o.placeholder = _('Please select a modem');
     o.textvalue = getmodem.bind(o);
@@ -247,11 +374,33 @@ return view.extend({
         <br />uqmi: <br /> \
         Select one of the available cdc-wdmX ports.<br /> \
         <br />ModemManager: <br /> \
-        Select one of the searched modem identifiers.'));
-    o.value('serial', _('serial'));
-    o.value('ecm', _('ecm'));
-    o.value('uqmi', _('uqmi'));
-    o.value('mm', _('modemmanager'));
+        Select one of the searched modem identifiers.')
+    );
+
+    let have_smstool = installedList.find(function (s) { return s && s.indexOf('sms-tool') !== -1; }) ? true : false;
+    let have_serial = installedList.find(function (s) { return s && s.indexOf('kmod-usb-serial') !== -1; }) ? true : false;
+    let have_serialoption = installedList.find(function (s) { return s && s.indexOf('kmod-usb-serial-option') !== -1; }) ? true : false;
+
+    let have_ecm = installedList.find(function (s) { return s && s.indexOf('wget-ssl') !== -1; }) ? true : false;
+
+    let have_uqmi = installedList.find(function (s) { return s && s.indexOf('uqmi') !== -1; }) ? true : false;
+    let have_uqmiqmi = installedList.find(function (s) { return s && s.indexOf('kmod-usb-net-qmi-wwan') !== -1; }) ? true : false;
+    let have_uqmimbim = installedList.find(function (s) { return s && s.indexOf('kmod-usb-net-cdc-mbim') !== -1; }) ? true : false;
+
+    let have_mm = installedList.find(function (s) { return s && s.indexOf('modemmanager') !== -1; }) ? true : false;
+
+    if (have_serial && have_serialoption && have_smstool) {
+      o.value('serial', _('serial'));
+    }
+    if (have_ecm) {
+      o.value('ecm', _('ecm'));
+    }
+    if ((have_uqmi && have_uqmiqmi) || (have_uqmi && have_uqmimbim)) {
+      o.value('uqmi', _('uqmi'));
+    }
+    if (have_mm) {
+      o.value('mm', _('modemmanager'));
+    }
     o.exclude = s.section;
     o.nocreate = true;
     o.rmempty = false;
@@ -264,8 +413,8 @@ return view.extend({
     o = s.taboption('general', form.Value, 'comm_serial', _('Port for communication'));
     o.depends('modemdata', 'serial');
 
-    data[0].sort((a, b) => a.name > b.name);
-    data[0].forEach(dev => {
+    data[0].sort(function (a, b) { return a.name > b.name; });
+    data[0].forEach(function (dev) {
       if (dev.name.match(/^ttyUSB/) || dev.name.match(/^ttyACM/) || dev.name.match(/^mhi_/) || dev.name.match(/^wwan/)) {
         o.value('/dev/' + dev.name);
       }
@@ -287,28 +436,27 @@ return view.extend({
       uci.set('defmodems', section_id, 'comm_port', value);
       return form.Value.prototype.write.apply(this, [section_id, value]);
     };
-    
-    o.validate = function (section_id, value) {
-        if (!/^[0-9.]+$/.test(value)) {
-            return _('Only numbers and dots are allowed');
-        }
 
-        let m = value.match(/^192\.168\.(\d{1,3})\.(\d{1,3})$/);
-        if (m) {
-            let p3 = parseInt(m[1], 10);
-            let p4 = parseInt(m[2], 10);
-            if (p3 >= 0 && p3 <= 255 && p4 >= 0 && p4 <= 255) {
-                return true;
-            }
+    o.validate = function (section_id, value) {
+      if (!/^[0-9.]+$/.test(value)) {
+        return _('Only numbers and dots are allowed');
+      }
+      let mIp = value.match(/^192\.168\.(\d{1,3})\.(\d{1,3})$/);
+      if (mIp) {
+        let p3 = parseInt(mIp[1], 10);
+        let p4 = parseInt(mIp[2], 10);
+        if (p3 >= 0 && p3 <= 255 && p4 >= 0 && p4 <= 255) {
+          return true;
         }
-        return _('Enter a valid IP address in the format 192.168.X.X');
+      }
+      return _('Enter a valid IP address in the format 192.168.X.X');
     };
 
     o = s.taboption('general', form.Value, 'comm_uqmi', _('Port for communication'));
     o.depends('modemdata', 'uqmi');
 
-    data[0].sort((a, b) => a.name > b.name);
-    data[0].forEach(dev => {
+    data[0].sort(function (a, b) { return a.name > b.name; });
+    data[0].forEach(function (dev) {
       if (dev.name.match(/^cdc-wdm/)) {
         o.value('/dev/' + dev.name);
       }
@@ -342,11 +490,11 @@ return view.extend({
     o = s.taboption('general', form.Value, 'comm_mm', _('Modem id'));
     o.depends('modemdata', 'mm');
 
-    data[0].sort((a, b) => a.name > b.name);
+    data[0].sort(function (a, b) { return a.name > b.name; });
     try {
       let mmData = JSON.parse(data[2]);
       if (mmData['modem-list'] && Array.isArray(mmData['modem-list'])) {
-        mmData['modem-list'].forEach(modem => {
+        mmData['modem-list'].forEach(function (modem) {
           o.value(modem, _('modem ') + modem.split('/').pop());
         });
       }
