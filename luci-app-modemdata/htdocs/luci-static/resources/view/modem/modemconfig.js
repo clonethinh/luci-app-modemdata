@@ -67,12 +67,10 @@ return view.extend({
                <br />ModemManager and uqmi need more time to respond.')
         );
         o.value('-1', _('Disabled'));
-        o.value('2',  _('2 seconds'));
         o.value('5',  _('5 seconds'));
         o.value('10', _('10 seconds'));
         o.value('30', _('30 seconds'));
         o.value('45', _('45 seconds'));
-        o.value('60', _('60 seconds'));
         o.default = '5';
         o.rmempty = false;
 

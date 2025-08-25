@@ -16,13 +16,31 @@ network=$2
 forced_plmn=$3
 mbim=$4
 
+try_params_uqmi() {
+	local retries=5
+	local delay=1
+	local i
+	local result
+
+	for i in $(seq 1 $retries); do
+		result=$($RES/params_qmi.sh "$device" "$forced_plmn" "$mbim")
+		if [ -n "$result" ]; then
+			echo "$result"
+			return 0
+		fi
+		sleep "$delay"
+	done
+	echo "{}"
+}
+
+SEPARATOR=""
 parse_section() {
 	echo "["
 	$RES/product_qmi.sh "$device"
 	echo ","
 	$RES/network.sh "$network"
 	echo ","
-	$RES/params_qmi.sh "$device" "$forced_plmn" "$mbim"
+	try_params_uqmi
 	echo "]"
 }
 

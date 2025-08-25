@@ -4,7 +4,6 @@
 #
 
 chmod +x /usr/share/modemdata/btsearch.sh 2>&1 &
-chmod +x /usr/share/modemdata/params_mod.sh 2>&1 &
 chmod +x /usr/share/modemdata/product_qmi.sh 2>&1 &
 
 chmod +x /usr/bin/md_modemmanager 2>&1 &

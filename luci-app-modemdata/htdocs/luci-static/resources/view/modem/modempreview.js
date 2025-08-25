@@ -9,17 +9,27 @@
 'require dom';
 
 /*
-  Copyright 2025 Rafał Wabik - IceG - From eko.one.pl forum
 
+  Copyright 2025 Rafał Wabik - IceG - From eko.one.pl forum
+  
   MIT License
+  
 */
 
 let refresh = {
   interval: 5,         // normal => 5s
   labelEl: null,
   selectEl: null,
-  lastSec: null
+  lastSec: null,
+  remaining: null
 };
+
+let _latestJsonByIndex = {};
+let _mainPollWasActive = false;
+
+let _sigModalOpen = false;
+let _sigModalTimer = null;
+let _sigInflight = false;
 
 function setUpdateMessage(el, sec) {
   if (!el) return;
@@ -43,18 +53,27 @@ function setUpdateMessage(el, sec) {
   el.appendChild(document.createTextNode(parts[1] || ''));
 }
 
-async function loadUCInterval() {
+async function getSavedUpdateInterval() {
   try {
-    let savedInterval = await uci.get('modemdata', '@modemdata[0]', 'updtime');
-    let interval = savedInterval ? parseInt(savedInterval, 10) : 5;
+    const raw = await uci.get('modemdata', '@modemdata[0]', 'updtime');
+    let n = raw != null ? parseInt(raw, 10) : 5;
+    if (!Number.isFinite(n)) n = 5;
+    return (n === -1 || n >= 0) ? n : 5;
+  } catch (e) {
+    console.error('getSavedUpdateInterval error:', e);
+    return 5;
+  }
+}
 
-    let selectElement = document.getElementById('selectInterval');
-    if (selectElement) {
-      selectElement.value = interval;
-    }
+async function loadUCInterval(opts = { applyToGlobal: true }) {
+  const interval = await getSavedUpdateInterval();
 
-    refresh.interval = interval;
+  const selectElement = document.getElementById('selectInterval');
+  if (selectElement) selectElement.value = String(interval);
 
+  refresh.interval = interval;
+
+  if (opts.applyToGlobal) {
     if (interval > 0) {
       refresh.remaining = interval;
       refresh.lastSec = null;
@@ -64,9 +83,16 @@ async function loadUCInterval() {
       refresh.remaining = null;
       setUpdateMessage(refresh.labelEl, -1);
     }
-  } catch (err) {
-    console.error('Error loading saved interval from UCI:', err);
   }
+  return interval;
+}
+
+function pop(a, message, severity) {
+    ui.addNotification(a, message, severity)
+}
+
+function popTimeout(a, message, timeout, severity) {
+    ui.addTimeLimitedNotification(a, message, timeout, severity)
 }
 
 function clickToSelectInterval(ev) {
@@ -90,6 +116,308 @@ function clickToSelectInterval(ev) {
   }
 }
 
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+function toNumber(val){
+  if (val == null) return null;
+  let s = String(val).replace(',', '.');
+  let m = s.match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+function pctFromRange(val, min, max){
+  if (val == null) return 0;
+  return clamp(Math.round(((val - min) / (max - min)) * 100), 0, 100);
+}
+
+const SIGNAL_RANGES = {
+  RSSI:        { min: -110, max: -50,  unit: 'dBm' },
+  RSRP:        { min: -120, max: -80,  unit: 'dBm' },
+  RSRQ:        { min: -20,  max: -3,   unit: 'dB'  },
+  SINR:        { min: -5,   max: 25,   unit: 'dB'  },
+  SNR:         { min: 0,    max: 30,   unit: 'dB'  },
+  RSSI_wcdma:  { min: -110, max: -50,  unit: 'dBm' },
+  RSCP:        { min: -120, max: -60,  unit: 'dBm' },
+  ECIO:        { min: -24,  max: 0,    unit: 'dB'  }
+};
+
+const SIG_COLORS = {
+  green:  '#34c759',
+  yellow: '#FFFF00',
+  orange: '#FFA500',
+  red:    '#e74c3c',
+  gray:   '#7f8c8d'
+};
+
+function getCSQLabel(csqVal) {
+  let n = toNumber(csqVal);
+  if (n == null || n === 99) return { label: _('No data'), color: 'gray' };
+  if (n >= 20) return { label: _('Excellent'), color: 'green' };
+  if (n >= 15) return { label: _('Good'), color: 'yellow' };
+  if (n >= 10) return { label: _('Fair'), color: 'orange' };
+  return { label: _('Poor'), color: 'red' };
+}
+
+function _progressValueDiv(valueId, labelText, descr, barId, showInitially) {
+  return E('div', { 
+    'class': 'cbi-value', 
+    'id': valueId,
+    'style': (showInitially === false ? 'display:none;' : '') 
+  }, [
+    E('label', { 'class': 'cbi-value-title' }, [
+      _(labelText)  // Zostawiamy tylko nazwę (np. CSQ, RSSI)
+    ]),
+    E('div', { 'class': 'cbi-value-field' }, [
+      E('div', { 
+        'id': barId, 
+        'class': 'cbi-progressbar', 
+        'title': '-',
+        'style': 'width:100%;max-width:200px;'
+      }, E('div')),
+      E('div', {
+        'id': barId + '_label',  // Opis wyświetlany tutaj
+        'style': 'text-align:left;font-size:11px;opacity:0.8;margin-top:2px;'
+      }, _(descr))  // Opis będzie wyświetlany pod paskiem
+    ])
+  ]);
+}
+
+function _qualityFor(metricKey, rawValue){
+  if (metricKey === 'CSQ') return getCSQLabel(rawValue);
+  let v = rawValue;
+  if (v == null || String(v).trim()==='') return { label: _('No data'), color: 'gray' };
+  return getSignalLabel(v, metricKey);
+}
+
+function _setProgressBarRich(barId, metricKey, rawValue){
+  let wrap = document.getElementById(barId);
+  if (!wrap) return;
+  let inner = wrap.firstElementChild || null;
+  if (!inner) return;
+
+  if (!wrap._maxWidthSet) {
+    wrap.style.maxWidth = '200px';
+    wrap._maxWidthSet = true;
+  }
+
+  let oldHint = wrap.querySelector('.bar-hint');
+  if (oldHint) oldHint.remove();
+
+  let percent = 0;
+  let hasValue = !(rawValue == null || String(rawValue).trim() === '' || (metricKey === 'CSQ' && String(rawValue) === '99'));
+
+  if (metricKey === 'CSQ') {
+    let v = toNumber(rawValue);
+    if (v == null || v === 99) percent = 0;
+    else percent = clamp(Math.round((v / 31) * 100), 0, 100);
+  } else {
+    let rng = SIGNAL_RANGES[metricKey];
+    let numeric = toNumber(rawValue);
+    percent = rng ? pctFromRange(numeric, rng.min, rng.max) : 0;
+  }
+
+  let q = _qualityFor(metricKey, rawValue);
+  let colorHex = SIG_COLORS[q.color] || SIG_COLORS.gray;
+
+  if (inner._lastWidth !== percent) {
+    inner.style.width = percent + '%';
+    inner._lastWidth = percent;
+  }
+  if (inner._lastColor !== colorHex) {
+    inner.style.backgroundColor = colorHex;
+    inner._lastColor = colorHex;
+  }
+
+  let unit = '';
+  if (metricKey === 'RSSI' || metricKey === 'RSRP' || metricKey === 'RSCP') unit = 'dBm';
+  else if (metricKey === 'RSRQ' || metricKey === 'SINR' || metricKey === 'SNR' || metricKey === 'ECIO') unit = 'dB';
+
+  let vtxt = (rawValue == null || String(rawValue).trim()==='') ? '-' : String(rawValue);
+  if (unit && vtxt !== '-' && !/\bdB(m)?\b/i.test(vtxt)) vtxt += ' ' + unit;
+
+  wrap.setAttribute('title', '%s'.format(vtxt) + ' | ' + q.label + ' ');
+
+  let labelDiv = document.getElementById(barId + '_label');
+  if (labelDiv) {
+    let currentLabel = labelDiv.textContent || '';
+    if (!currentLabel) {
+      labelDiv.textContent = vtxt + ' (' + q.label + ')';
+    }
+  }
+}
+
+function _getActiveTabIndex() {
+  let activeTab = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
+  if (!activeTab) return null;
+  let idx = parseInt(String(activeTab.getAttribute('data-tab') || '').replace('tab', ''), 10);
+  return isNaN(idx) ? null : idx;
+}
+
+async function _readSignalsForActiveTab(forceFresh) {
+  let idx = _getActiveTabIndex();
+  if (idx == null) return null;
+
+  let cached = _latestJsonByIndex[idx];
+
+  if (forceFresh || !cached) {
+    try {
+      await uci.load('defmodems');
+      let defs = uci.sections('defmodems', 'defmodems') || [];
+      let m = defs[idx];
+      if (!m) return null;
+
+      let res = '';
+      if (m.modemdata === 'serial' || m.modemdata === 'ecm')
+        res = await L.resolveDefault(fs.exec_direct('/usr/bin/md_serial_ecm', [m.comm_port, m.network, m.forced_plmn || '-']));
+      else if (m.modemdata === 'uqmi')
+        res = await L.resolveDefault(fs.exec_direct('/usr/bin/md_uqmi', [m.comm_port, m.network, m.forced_plmn || '-', m.onproxy || '-']));
+      else if (m.modemdata === 'mm')
+        res = await L.resolveDefault(fs.exec_direct('/usr/bin/md_modemmanager', [m.comm_port, m.network, m.forced_plmn || '-']));
+
+      if (!res) return null;
+      let jsonraw = JSON.parse(res);
+      let arr = Object.values(jsonraw);
+      if (!arr || arr.length < 3 || !arr[2]) return null;
+
+      cached = { json0: arr[0], json1: arr[1], json2: arr[2] };
+
+      _latestJsonByIndex[idx] = {
+        json0: arr[0],
+        json1: arr[1],
+        json2: arr[2],
+        hash: JSON.stringify(arr[2]).length + '',
+        ts: Date.now()
+      };
+    } catch(e){
+      console.error('signals read error:', e);
+      return null;
+    }
+  }
+
+  let j2 = cached.json2 || {};
+  let addon = j2.addon || [];
+  let byKey = function(k){ let o = addon.find(function(i){ return i.key===k; }); return o ? o.value : null; };
+
+  let csqRaw = (j2 && (j2.csq != null)) ? j2.csq : null;
+
+  function fmt(unit, v) {
+    if (v == null || String(v).trim()==='') return null;
+    let s = String(v);
+    if (unit && !/\bdB(m)?\b/i.test(s)) s = s + ' ' + unit;
+    return s;
+  }
+
+  return {
+    MODE: j2.mode || '',
+    CSQ:  csqRaw,
+    RSSI: fmt('dBm', byKey('RSSI')),
+    RSRP: fmt('dBm', byKey('RSRP') || byKey('RSRP (avg)')),
+    RSRQ: fmt('dB',  byKey('RSRQ')),
+    SINR: fmt('dB',  byKey('SINR')),
+    SNR:  fmt('dB',  byKey('SNR')),
+    RSCP: fmt('dBm', byKey('RSCP')),
+    ECIO: fmt('dB',  byKey('ECIO'))
+  };
+}
+
+async function _updateBasicSignalsModal(){
+  if (!_sigModalOpen) return;
+  if (_sigInflight) return;
+  _sigInflight = true;
+
+  try {
+    let d = await _readSignalsForActiveTab(true);
+    if (!d) return;
+
+    _setProgressBarRich('bs_bar_csq', 'CSQ', d.CSQ);
+
+    let mode = (d.MODE || '').toUpperCase();
+    let isLTE5G = (mode.indexOf('LTE') >= 0 || mode.indexOf('5G') >= 0);
+
+    let show = function(id, vis){ let el = document.getElementById(id); if (el) el.style.display = vis ? '' : 'none'; };
+
+    if (isLTE5G) {
+      show('bs_rssi', true);  show('bs_rsrp', true);  show('bs_rsrq', true);  show('bs_sxx', true);
+      show('bs_w_rssi', false); show('bs_rscp', false); show('bs_ecio', false);
+
+      _setProgressBarRich('bs_bar_rssi', 'RSSI', d.RSSI);
+      _setProgressBarRich('bs_bar_rsrp', 'RSRP', d.RSRP);
+      _setProgressBarRich('bs_bar_rsrq', 'RSRQ', d.RSRQ);
+
+      let sType = (d.SINR != null && String(d.SINR).trim() !== '') ? 'SINR' :
+                  ((d.SNR != null && String(d.SNR).trim() !== '') ? 'SNR' : 'SINR');
+      let sVal  = (sType === 'SINR') ? d.SINR : d.SNR;
+      _setProgressBarRich('bs_bar_sxx', sType, sVal);
+
+      let sxxTitleLabel = document.querySelector('#bs_sxx .cbi-value-title');
+      if (sxxTitleLabel) {
+        sxxTitleLabel.firstChild.textContent = sType;
+      }
+    } else {
+      show('bs_rssi', false); show('bs_rsrp', false); show('bs_rsrq', false); show('bs_sxx', false);
+      show('bs_w_rssi', true); show('bs_rscp', true); show('bs_ecio', true);
+
+      _setProgressBarRich('bs_bar_w_rssi', 'RSSI_wcdma', d.RSSI);
+      _setProgressBarRich('bs_bar_rscp',   'RSCP',        d.RSCP);
+      _setProgressBarRich('bs_bar_ecio',   'ECIO',        d.ECIO);
+    }
+  } catch(e){
+    console.error('BasicSignals modal update error:', e);
+  } finally {
+    _sigInflight = false;
+  }
+}
+
+async function openBasicSignalsModal() {
+
+  _mainPollWasActive = poll.active();
+  if (_mainPollWasActive) poll.stop();
+
+  _sigModalOpen = true;
+
+  const saved = await getSavedUpdateInterval();
+
+  const modalInterval = (saved > 0 ? saved : 5);
+  const refreshIntervalMs = modalInterval * 1000;
+
+  const signalValues = E('div', { 'class': 'cbi-section' }, [
+    _progressValueDiv('bs_csq',  'CSQ', _('(Signal Strength)'), 'bs_bar_csq',  true),
+    _progressValueDiv('bs_rssi', 'RSSI', '(Received Signal Strength Indicator)', 'bs_bar_rssi', true),
+    _progressValueDiv('bs_rsrp', 'RSRP', '(Reference Signal Received Power)', 'bs_bar_rsrp', true),
+    _progressValueDiv('bs_rsrq', 'RSRQ', '(Reference Signal Received Quality)', 'bs_bar_rsrq', true),
+    _progressValueDiv('bs_sxx',  'SINR/SNR', '(Signal to Interference+Noise / Signal to Noise)', 'bs_bar_sxx', true),
+    _progressValueDiv('bs_w_rssi', 'RSSI', '(Received Signal Strength Indicator)', 'bs_bar_w_rssi', false),
+    _progressValueDiv('bs_rscp',   'RSCP', '(Received Signal Code Power)', 'bs_bar_rscp', false),
+    _progressValueDiv('bs_ecio',   'EC/IO', '(Energy per Chip / Interference)', 'bs_bar_ecio', false)
+  ]);
+
+  ui.showModal(_('Primary band signal levels'), [
+        E('div', { 'class': 'cbi-section' }, [
+        E('div', { 'class': 'cbi-section-descr' },
+        _('Updating again in %s second(s).').format(modalInterval)
+    ),
+      signalValues
+    ]),
+    E('div', { 'class': 'right' }, [
+      E('button', {
+        'class': 'btn',
+        'click': ui.createHandlerFn(this, function () {
+          _sigModalOpen = false;
+          if (_sigModalTimer) { clearInterval(_sigModalTimer); _sigModalTimer = null; }
+          ui.hideModal();
+
+          if (_mainPollWasActive && refresh.interval > 0 && !poll.active()) {
+            refresh.lastSec = null;
+            poll.start();
+          }
+        })
+      }, _('Close'))
+    ])
+  ], 'cbi-modal');
+
+  setTimeout(_updateBasicSignalsModal, 100);
+  if (_sigModalTimer) { clearInterval(_sigModalTimer); }
+  _sigModalTimer = setInterval(_updateBasicSignalsModal, refreshIntervalMs);
+}
+
 // 1 sec tick
 function updateDataTick(runFetchFn) {
   let tick = poll.tick || 0;
@@ -108,6 +436,7 @@ function updateDataTick(runFetchFn) {
 
   return Promise.resolve();
 }
+
 function formatDuration(sec) {
   if (sec === '-' || sec === '') return '-';
   let d = Math.floor(sec / 86400),
@@ -239,6 +568,8 @@ function checkOperatorName(t) {
   return u.join(' ');
 }
 
+/* BTS info download */
+
 async function handleDownloadAction(ev) {
   if (ev !== 'godownload') return;
 
@@ -353,7 +684,7 @@ function updateTableToValues(ev, modemIndex) {
   } else if (hasSnr) {
     headerCell.textContent = _('SNR');
   } else {
-    headerCell.textContent = _('SINR'); // SINR
+    headerCell.textContent = _('SINR'); // domyślnie
   }
 }
 
@@ -438,7 +769,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
     return (function() {
       return (function() {
         if (modem.modemdata === 'serial' || modem.modemdata === 'ecm')
-          return L.resolveDefault(fs.exec_direct('/usr/bin/md_serial_ecm', [modem.comm_port, modem.network]));
+          return L.resolveDefault(fs.exec_direct('/usr/bin/md_serial_ecm', [modem.comm_port, modem.network, modem.forced_plmn_op]));
         else if (modem.modemdata === 'uqmi')
           return L.resolveDefault(fs.exec_direct('/usr/bin/md_uqmi', [modem.comm_port, modem.network, modem.forced_plmn_op, modem.mbim_op]));
         else if (modem.modemdata === 'mm') {
@@ -450,13 +781,23 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
 
         let jsonraw = JSON.parse(res);
         let json = Object.values(jsonraw);
-        // Guard na nieoczekiwanš strukturę
         if (!json || json.length < 3 || !json[0] || !json[1] || !json[2]) return;
+
+        if (json?.[2]?.error && String(json[2].error).includes('Device is busy')) {
+            if (poll.active()) poll.stop();
+            
+            popTimeout(null, E('p', _('Waiting...')+' '+_('Device is busy')), 5000, 'info');
+
+            window.setTimeout(() => {
+                if (!poll.active()) poll.start();
+            }, 8000);
+
+            return;
+        }
 
         let rowsWcdma = [];
         let rowsLte = [];
 
-        // GET MODEMS TABLE
         let wcdmaTable = document.getElementById(modem.wcdmaTableId);
         let lteTable = document.getElementById(modem.lteTableId);
 
@@ -595,7 +936,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
             sinr: (json[2].addon.find(function(i){ return i.key==='SINR'; }) || {}).value,
             snr:  (json[2].addon.find(function(i){ return i.key==='SNR'; })  || {}).value
           };
-          updateTableToValues(tsnr, modem.index); // modem.index
+          updateTableToValues(tsnr, modem.index);
         }
 
         // MOBILE SVG
@@ -628,7 +969,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
           );
         }
 
-        // Connection state
+        // Connection status
         let stateView = document.getElementById(modem.stateId);
         if (stateView) {
           let status = json[1].status;
@@ -664,7 +1005,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
         let txView = document.getElementById(modem.txId);
         if (txView) txView.textContent = json[1].tx.length > 1 ? json[1].tx : '0 B';
 
-        // Maskowanie
+        // ON/OFF HIDE DATA
         let hide_list = Array.isArray(sectionsxt[0].hide_data) ? sectionsxt[0].hide_data : [];
         let hidedata = document.getElementById('hide-data') ? document.getElementById('hide-data').checked : false;
 
@@ -757,7 +1098,6 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
         if (tempView) {
           let temperatureObj = (json[2].addon || []).find(function(i){ return i.key==='Temperature'; });
           let temperature = temperatureObj ? temperatureObj.value : _('No data');
-          // poprawny znak stopnia
           temperature = temperature.replace('&deg;', '°');
           if (temperature && temperature !== _('No data') && temperature.length > 2) {
             let tempDivElement = document.getElementById(modem.tempDivId);
@@ -924,26 +1264,22 @@ return view.extend({
       ]);
     }
 
-    // SETTINGZ
+    // TOOLBAR
     let globalToolbar = E('div', {
       'class': 'right',
       'style': 'width:100%; margin-bottom:8px; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap;'
     }, [
-      // L
       E('div', { 'style': 'display:flex; flex-direction:column; align-items:flex-start; gap:.5rem; min-width:320px;' }, [
         E('div', { 'style': 'display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;' }, [
           E('label', { 'for': 'selectInterval', 'style': 'text-align:left;' }, _('Auto update every:')),
           E('select', { 'id': 'selectInterval', 'change': clickToSelectInterval }, [
             E('option', { value: '-1' }, _('Disabled')),
-            E('option', { value: '2' }, _('2 seconds')),
             E('option', { value: '5' }, _('5 seconds')),
             E('option', { value: '10' }, _('10 seconds')),
             E('option', { value: '30' }, _('30 seconds')),
-            E('option', { value: '45' }, _('45 seconds')),
-            E('option', { value: '60' }, _('60 seconds'))
+            E('option', { value: '45' }, _('45 seconds'))
           ])
         ]),
-
         E('label', {
           'id': 'countdown-label',
           'style': 'font-size:.9em; opacity:.85; min-height:1.2em; margin-top:.25rem; text-align:left;'
@@ -952,26 +1288,32 @@ return view.extend({
         )
       ]),
 
-      // R
       E('div', { 'style': 'display:flex; align-items:center; gap:1rem; margin-left:auto; flex-wrap:wrap;' }, [
+        E('span', {}, _('Primary band')),
+        E('button', {
+          'class': 'btn cbi-button-neutral',
+          'id': 'basicSignals',
+          'data-tooltip': _('Show signal levels for the primary band'),
+          'click': ui.createHandlerFn(this, function(){ openBasicSignalsModal(); })
+        }, _('☰')),
+        E('span', {}, _('Search BTS')),
+        E('button', {
+          'class': 'cbi-button cbi-button-action important',
+          'id': 'btsSearch',
+          'click': ui.createHandlerFn(this, function () { return handleAction('useraction'); })
+        }, _('Search')),
         E('label', { 'class': 'cbi-checkbox', 'style': 'user-select:none;' }, [
           E('input', {
             'id': 'hide-data',
             'type': 'checkbox',
             'name': 'showhistory',
-            'data-tooltip': _('Check this option if you need to hide selected data')
+            'data-tooltip': _('Hide selected data')
           }),
           ' ',
           E('label', { 'for': 'hide-data' }),
           ' ',
           _('Hide data.')
         ]),
-        E('span', {}, _('Search BTS using Cell ID')),
-        E('button', {
-          'class': 'cbi-button cbi-button-action important',
-          'id': 'btsSearch',
-          'click': ui.createHandlerFn(this, function () { return handleAction('useraction'); })
-        }, _('Search'))
       ])
     ]);
 
@@ -1038,71 +1380,36 @@ return view.extend({
       let lteTableId   = 'lteTable_' + i;
 
       // WCDMA & LTE TABLE
-        let wcdmaTable = E('table', {
-          'class': 'table',
-          'id': wcdmaTableId,
-          'style': 'border:1px solid var(--border-color-medium)!important; table-layout:fixed; border-collapse:collapse; width:100%; display:none; font-size:12px;'
-        },
-          E('tr', { 'class': 'tr table-titles' }, [
-            E('th', { 'class': 'th left', 'style': 'min-width:80px; width:80px;'  }, wcdmaTableTitles[0]), // Name
-            E('th', { 'class': 'th left', 'style': 'min-width:80px; width:80px;;'  }, wcdmaTableTitles[1]), // UARFCN
-            E('th', { 'class': 'th left', 'style': 'min-width:100px; width:100px;' }, wcdmaTableTitles[2]), // RSSI
-            E('th', { 'class': 'th left', 'style': 'min-width:100px; width:100px;' }, wcdmaTableTitles[3]), // RSCP
-            E('th', { 'class': 'th left', 'style': 'min-width:100px; width:100px;' }, wcdmaTableTitles[4])  // EcIo
-          ])
-        );
+      let wcdmaTable = E('table', {
+        'class': 'table',
+        'id': wcdmaTableId,
+        'style': 'border:1px solid var(--border-color-medium)!important; table-layout:fixed; border-collapse:collapse; width:100%; display:none; font-size:12px;'
+      },
+        E('tr', { 'class': 'tr table-titles' }, [
+          E('th', { 'class': 'th left', 'style': 'min-width:80px; width:80px;'  }, wcdmaTableTitles[0]),
+          E('th', { 'class': 'th left', 'style': 'min-width:80px; width:80px;;'  }, wcdmaTableTitles[1]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px; width:100px;' }, wcdmaTableTitles[2]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px; width:100px;' }, wcdmaTableTitles[3]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px; width:100px;' }, wcdmaTableTitles[4])
+        ])
+      );
 
-        let lteTable = E('table', {
-          'class': 'table',
-          'id': lteTableId,
-          'style': 'border:1px solid var(--border-color-medium)!important; table-layout:fixed; border-collapse:collapse; width:100%; display:none; font-size:12px;'
-        },
-          E('tr', { 'class': 'tr table-titles' }, [
-            E('th', { 'class': 'th left', 'style': 'min-width:110px; width:110px;' }, lteTableTitles[0]), // Band
-            E('th', { 'class': 'th left', 'style': 'min-width:80px;  width:80px;'  }, lteTableTitles[1]), // Bandwidth
-            E('th', { 'class': 'th left', 'style': 'min-width:80px;  width:80px;'  }, lteTableTitles[2]), // PCI
-            E('th', { 'class': 'th left', 'style': 'min-width:55px;  width:55px;'  }, lteTableTitles[3]), // EARFCN
-            E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[4]), // RSSI
-            E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[5]), // RSRP
-            E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[6]), // RSRQ
-            E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[7])  // SINR/SNR
-          ])
-        );
-
-      modemTabs.push({
-        index: i,
-        network: net,
-        comm_port: mport,
-        forced_plmn_op: fplmn,
-        mbim_op: rmbim,
-        modemdata: rmethod,
-        signalId: signalId,
-        connstId: connstId,
-        operatorId: operatorId,
-        countryId: countryId,
-        simId: simId,
-        rxId: rxId,
-        txId: txId,
-        slotId: slotId,
-        slotDivId: slotDivId,
-        tempDivId: tempDivId,
-        iccidId: iccidId,
-        imeiId: imeiId,
-        imsiId: imsiId,
-        modemtypeId: modemtypeId,
-        firmwareId: firmwareId,
-        tempId: tempId,
-        cellId: cellId,
-        lacId: lacId,
-        tacId: tacId,
-        mccId: mccId,
-        mncId: mncId,
-        stateId: stateId,
-        modeId: modeId,
-        bandshowId: bandshowId,
-        wcdmaTableId: wcdmaTableId,
-        lteTableId: lteTableId
-      });
+      let lteTable = E('table', {
+        'class': 'table',
+        'id': lteTableId,
+        'style': 'border:1px solid var(--border-color-medium)!important; table-layout:fixed; border-collapse:collapse; width:100%; display:none; font-size:12px;'
+      },
+        E('tr', { 'class': 'tr table-titles' }, [
+          E('th', { 'class': 'th left', 'style': 'min-width:110px; width:110px;' }, lteTableTitles[0]),
+          E('th', { 'class': 'th left', 'style': 'min-width:80px;  width:80px;'  }, lteTableTitles[1]),
+          E('th', { 'class': 'th left', 'style': 'min-width:80px;  width:80px;'  }, lteTableTitles[2]),
+          E('th', { 'class': 'th left', 'style': 'min-width:55px;  width:55px;'  }, lteTableTitles[3]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[4]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[5]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[6]),
+          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[7])
+        ])
+      );
 
       let modemTab = E('div', {
         'data-tab': 'tab' + i,
@@ -1119,36 +1426,36 @@ return view.extend({
             E('div', { 'class': 'ifacebox-body', 'style': 'padding:8px' }, [
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px' }, [
                 E('span', {}, _('Signal') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': signalId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'signal_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px' }, [
                 E('span', {}, _('Connection state') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': stateId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'state_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Operator') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': operatorId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'operator_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Country') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': countryId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'country_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Technology') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': modeId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'mode_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'text-align:left;font-size:11px;border-top:1px solid var(--border-color-medium);padding-top:8px' }, [
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('Connection time') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': connstId }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': 'connst_' + i }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:2px' }, [
-                  E('span', '\u25b2\u202f' + _('Sent') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': txId }, [ '-' ])
+                  E('span', '▲ ' + _('Sent') + ':'),
+                  E('span', { 'style': 'font-weight:500', 'id': 'tx_' + i }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between' }, [
-                  E('span', '\u25bc\u202f' + _('Received') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': rxId }, [ '-' ])
+                  E('span', '▼ ' + _('Received') + ':'),
+                  E('span', { 'style': 'font-weight:500', 'id': 'rx_' + i }, [ '-' ])
                 ])
               ])
             ])
@@ -1160,27 +1467,27 @@ return view.extend({
             E('div', { 'class': 'ifacebox-body', 'style': 'padding:8px' }, [
               E('div', { 'id': 'slotDiv_' + i, 'style': 'display:none;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Slot in use') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': slotId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'slot_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('SIM status') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:75%; display:inline-block; cursor:pointer;',
-                  'id': simId, 'title': '-'
+                  'id': 'sim_' + i, 'title': '-'
                 }, [ '-' ])
               ]),
               E('div', { 'style': 'text-align:left;font-size:11px;border-top:1px solid var(--border-color-medium);padding-top:8px' }, [
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('IMSI') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': imsiId }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': 'imsi_' + i }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('ICCID') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': iccidId }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': 'iccid_' + i }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('Modem IMEI') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': imeiId }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': 'imei_' + i }, [ '-' ])
                 ])
               ])
             ])
@@ -1194,19 +1501,19 @@ return view.extend({
                 E('span', {}, _('Modem type') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%; display:inline-block; cursor:pointer;',
-                  'id': modemtypeId, 'title': '-'
+                  'id': 'modemtype_' + i, 'title': '-'
                 }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Revision / FW') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%; display:inline-block; cursor:pointer;',
-                  'id': firmwareId, 'title': '-'
+                  'id': 'firmware_' + i, 'title': '-'
                 }, [ '-' ])
               ]),
               E('div', { 'id': 'tempDiv_' + i, 'style': 'display:none;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Chip Temperature') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': tempId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'temp_' + i }, [ '-' ])
               ])
             ])
           ]),
@@ -1219,24 +1526,24 @@ return view.extend({
                 E('span', {}, _('Cell ID') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%; display:inline-block; cursor:pointer;',
-                  'id': cellId, 'title': '-'
+                  'id': 'cell_' + i, 'title': '-'
                 }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('TAC') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': tacId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'tac_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('LAC') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': lacId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'lac_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Mobile Country Code') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': mccId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'mcc_' + i }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Mobile Network Code') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': mncId }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': 'mnc_' + i }, [ '-' ])
               ])
             ])
           ])
@@ -1248,6 +1555,41 @@ return view.extend({
       ]);
 
       tabsContainer.append(modemTab);
+
+      modemTabs.push({
+        index: i,
+        network: net,
+        comm_port: mport,
+        forced_plmn_op: fplmn,
+        mbim_op: rmbim,
+        modemdata: rmethod,
+        signalId: 'signal_' + i,
+        connstId: 'connst_' + i,
+        operatorId: 'operator_' + i,
+        countryId: 'country_' + i,
+        simId: 'sim_' + i,
+        rxId: 'rx_' + i,
+        txId: 'tx_' + i,
+        slotId: 'slot_' + i,
+        slotDivId: 'slotDiv_' + i,
+        tempDivId: 'tempDiv_' + i,
+        iccidId: 'iccid_' + i,
+        imeiId: 'imei_' + i,
+        imsiId: 'imsi_' + i,
+        modemtypeId: 'modemtype_' + i,
+        firmwareId: 'firmware_' + i,
+        tempId: 'temp_' + i,
+        cellId: 'cell_' + i,
+        lacId: 'lac_' + i,
+        tacId: 'tac_' + i,
+        mccId: 'mcc_' + i,
+        mncId: 'mnc_' + i,
+        stateId: 'state_' + i,
+        modeId: 'mode_' + i,
+        bandshowId: 'bandshow_' + i,
+        wcdmaTableId: 'wcdmaTable_' + i,
+        lteTableId: 'lteTable_' + i
+      });
     }
 
     setTimeout(function() {

@@ -86,7 +86,6 @@ return view.extend({
       return fs.write(this.file, value)
         .then(function (rc) {
           textarea.value = value;
-//          popTimeout(null, E('p', _('Contents have been saved.')), 5000, 'info');
           return rc;
         })
         .catch(function (e) {
@@ -153,7 +152,7 @@ return view.extend({
     }
   }),
 
-  packageDialog: baseclass.extend({
+packageDialog: baseclass.extend({
     __init__: function (installedList, pkgHelper) {
       this.installed = Array.isArray(installedList) ? installedList : [];
       this.pkgHelper = pkgHelper;
@@ -201,31 +200,58 @@ return view.extend({
     },
 
     show: function () {
-      let sectionOrder = ['serial', 'ecm', 'uqmi', 'ModemManager'];
-      let content = [];
-
-      content.push(E('p', {}, _('Please select method for reading data from the modem and install the necessary packages.')));
-
-      for (let si = 0; si < sectionOrder.length; si++) {
-        let key = sectionOrder[si];
-        let pkgs = this.sections[key];
-        if (!pkgs || pkgs.length === 0) continue;
-
-        content.push(this._sectionHeader(_(key)));
-
-        for (let i = 0; i < pkgs.length; i++) {
-          let p = pkgs[i];
-          let installed = this._isInstalled(p.name);
-          content.push(this._row(p.label, installed));
-        }
-      }
-
-      let footer = E('div', { 'class': 'right' }, [
-        E('button', { 'class': 'btn', 'click': ui.hideModal }, _('Dismiss'))
+      ui.showModal(_('Required packages'), [
+        E('p', { 'class': 'spinning' }, _('Loading package data…'))
       ]);
-      content.push(footer);
 
-      ui.showModal(_('Required packages'), content, 'cbi-modal');
+      let self = this;
+      let loadInstalled = Promise.resolve().then(function () {
+        if (self.installed && self.installed.length)
+          return self.installed;
+        if (typeof checkPackages === 'function')
+          return checkPackages().then(function (list) { self.installed = list || []; return self.installed; });
+        return [];
+      });
+
+      loadInstalled.then(function () {
+        let sectionOrder = ['serial', 'ecm', 'uqmi', 'ModemManager'];
+        let node = [];
+
+        node.push(E('p', {}, _('Please select method for reading data from the modem and install the necessary packages.')));
+
+        for (let si = 0; si < sectionOrder.length; si++) {
+          let key = sectionOrder[si];
+          let pkgs = self.sections[key];
+          if (!pkgs || pkgs.length === 0) continue;
+
+          node.push(self._sectionHeader(_(key)));
+
+          for (let i = 0; i < pkgs.length; i++) {
+            let p = pkgs[i];
+            let installed = self._isInstalled(p.name);
+            node.push(self._row(p.label, installed));
+          }
+        }
+
+        let footer = E('div', { 'class': 'right' }, [
+          E('div', { 'class': 'btn cbi-button-neutral', 'click': ui.hideModal }, _('Dismiss'))
+        ]);
+
+        let body = [
+          E('div', {}, node),
+          footer
+        ];
+
+        ui.showModal(_('Required packages'), body);
+      }).catch(function (err) {
+        ui.showModal(_('Required packages'), [
+          E('p', {}, _('Failed to load package data.')),
+          E('pre', {}, (err && err.toString) ? err.toString() : String(err)),
+          E('div', { 'class': 'right' }, [
+            E('div', { 'class': 'btn cbi-button-neutral', 'click': ui.hideModal }, _('Close'))
+          ])
+        ]);
+      });
     }
   }),
 
@@ -341,7 +367,7 @@ return view.extend({
     );
     o.onclick = function () { showPackageDialog.show(); };
     o.inputtitle = _('Check');
-    o.inputstyle = 'cbi-button cbi-button-negative important';
+    o.inputstyle = 'cbi-button cbi-button-action important';
 
     s = m.section(form.GridSection, 'defmodems', _('Modem(s)'));
     s.anonymous = true;
@@ -424,6 +450,15 @@ return view.extend({
     o.modalonly = true;
     o.write = function (section_id, value) {
       uci.set('defmodems', section_id, 'comm_port', value);
+      return form.Value.prototype.write.apply(this, [section_id, value]);
+    };
+
+    o = s.taboption('general', form.Flag, 'forced_plmn_serial', _('Force PLMN'), _('Force reading PLMN from file.'));
+    o.rmempty = false;
+    o.modalonly = true;
+    o.depends('modemdata', 'serial');
+    o.write = function (section_id, value) {
+      uci.set('defmodems', section_id, 'forced_plmn', value);
       return form.Value.prototype.write.apply(this, [section_id, value]);
     };
 

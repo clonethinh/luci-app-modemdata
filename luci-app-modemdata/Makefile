@@ -7,8 +7,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-modemdata
-PKG_VERSION:=1.0.8
-PKG_RELEASE:=20250818
+PKG_VERSION:=1.0.9
+PKG_RELEASE:=20250825
 LUCI_TITLE:=LuCI JS Support for modemdata application
 MAINTAINER:=Rafał Wabik <4Rafal@gmail.com>
 LUCI_DESCRIPTION:=Detailed information about the cellular modem and parameters of the mobile internet connection.

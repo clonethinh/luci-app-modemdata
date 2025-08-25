@@ -6,7 +6,7 @@
     			"file": {
 				"/usr/share/modemdata/btsearch.sh": [ "exec" ],
 				"/usr/share/modemdata/network.sh": [ "exec" ],
-				"/usr/share/modemdata/params_mod.sh": [ "exec" ],
+				"/usr/share/modemdata/params.sh": [ "exec" ],
 				"/usr/share/modemdata/params_modemmanager.sh": [ "exec" ],
 				"/usr/share/modemdata/params_qmi.sh": [ "exec" ],
 				"/usr/share/modemdata/product.sh": [ "exec" ],
@@ -18,7 +18,7 @@
 				"/usr/bin/md_modemmanager": [ "exec" ],
 				"/usr/bin/md_uqmi": [ "exec" ],
 				"/bin/sh -x /usr/share/modemdata/network.sh": [ "exec" ],
-				"/bin/sh -x /usr/share/modemdata/params_mod.sh": [ "exec" ],
+				"/bin/sh -x /usr/share/modemdata/params.sh": [ "exec" ],
 				"/bin/sh -x /usr/share/modemdata/params_modemmanager.sh": [ "exec" ],
 				"/bin/sh -x /usr/share/modemdata/params_qmi.sh": [ "exec" ],
 				"/bin/sh -x /usr/share/modemdata/product.sh": [ "exec" ],

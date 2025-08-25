@@ -17,6 +17,23 @@ device=$1
 network=$2
 forced_plmn=$3
 
+try_params_mm() {
+	local retries=5
+	local delay=1
+	local i
+	local result
+
+	for i in $(seq 1 $retries); do
+		result=$($RES/params_modemmanager.sh "$device" "$forced_plmn")
+		if [ -n "$result" ]; then
+			echo "$result"
+			return 0
+		fi
+		sleep "$delay"
+	done
+	echo "{}"
+}
+
 SEPARATOR=""
 parse_section() {
 		echo "["
@@ -24,7 +41,7 @@ parse_section() {
 			echo ","
 			$RES/network.sh "$network"
 			echo ","
-			$RES/params_modemmanager.sh "$device" "$forced_plmn"
+			try_params_mm
 		echo "]"
 }
 

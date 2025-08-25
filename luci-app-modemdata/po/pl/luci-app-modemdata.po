@@ -61,8 +61,8 @@ msgstr "Typ modemu"
 msgid "Hide data."
 msgstr "Ukryj dane."
 
-msgid "Check this option if you need to hide selected data"
-msgstr "Zaznacz tą opcję jeśli chcesz ukryć wybrane dane"
+msgid "Hide selected data"
+msgstr "Ukryj wybrane dane"
 
 msgid "Additional information"
 msgstr "Informacje dodatkowe"
@@ -268,8 +268,8 @@ msgstr "Szukaj"
 msgid "Bands"
 msgstr "Pasma"
 
-msgid "Search BTS using Cell ID"
-msgstr "Wyszukaj BTS po Cell ID"
+msgid "Search BTS"
+msgstr "Wyszukaj BTS"
 
 msgid "Hint: There may be a problem with polish characters if you download data from the btsearch site. The solution is to install the iconv package (to do this click on the button added below)."
 msgstr "Wskazówka: Może wystąpić problem z polskimi znakami, jeśli pobierasz dane ze strony btsearch. Rozwiązaniem jest instalacja pakietu iconv (w tym celu kliknij przycisk dodany poniżej)."
@@ -580,8 +580,8 @@ msgstr "Każda część musi być liczbą z zakresu od 0 do 255"
 msgid "In the future tab will allow you to update the package from %sRafał (IceG) external repository%s."
 msgstr "W przyszłości zakładka pozwoli zaktualizować pakiet z zewnętrznego repozytorium %sRafała (IceG)%s."
 
-msgid "Update option will be added to the package once support for apk has been fully implemented."
-msgstr "Opcja aktualizacji zostanie dodana do pakietu po pełnym wdrożeniu obsługi apk."
+msgid "Option will appear after apk implementation."
+msgstr "Opcja pojawi się po wdrożeniu apk."
 
 msgid "Author (package maintainer)"
 msgstr "Autor (opiekun pakietu)"
@@ -616,4 +616,24 @@ msgstr "Sprawdź wymagane pakiety"
 msgid "Before configuring the modem, check if all required packages are installed in the system."
 msgstr "Przed skonfigurowaniem modemu sprawdź, czy wszystkie wymagane pakiety są zainstalowane w systemie."
 
+msgid "Loading package data…"
+msgstr "Wczytywanie danych..."
+
+msgid "Waiting..."
+msgstr "Czekam..."
+
+msgid "Show signal levels for the primary band"
+msgstr "Pokaż poziomy sygnałów dla pasma podstawowego"
+
+msgid "Primary band signal levels"
+msgstr "Poziomy sygnałów dla pasma podstawowego"
+
+msgid "Device is busy"
+msgstr "Urządzenie jest zajęte"
+
+msgid "Primary band"
+msgstr "Pasmo podstawowe"
+
+msgid "Available offers"
+msgstr "Dostępne propozycje"
 
