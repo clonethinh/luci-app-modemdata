@@ -284,6 +284,8 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 ![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md1b.png?raw=true)
 
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md1bb.png?raw=true)
+
 > "Diagnostics" window / Okno diagnostyki:
 
 ![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md2b.png?raw=true)
