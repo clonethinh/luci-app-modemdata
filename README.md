@@ -282,27 +282,27 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 > "Modem(s)" window / Okno Modem(-ów):
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/m1b.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md1b.png?raw=true)
 
 > "Diagnostics" window / Okno diagnostyki:
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md2.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md2b.png?raw=true)
 
 > "Defined modems" window / Okno zdefiniowanych modem(-ów):
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/m3x.png?raw=true)
-
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/m3tr.png?raw=true)
-
 ![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3b.png?raw=true)
+
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3c.png?raw=true)
+
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3d.png?raw=true)
 
 > "Configuration" window / Okno konfiguracji pakietu:
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md4.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md4b.png?raw=true)
 
 > "Package update and support" window / Okno aktualizacji pakietu i wsparcia:
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md5.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md5b.png?raw=true)
 
 ### <img src="https://raw.githubusercontent.com/4IceG/Personal_data/master/dooffy_design_icons_EU_flags_United_Kingdom.png" height="24"> Thanks to / <img src="https://raw.githubusercontent.com/4IceG/Personal_data/master/dooffy_design_icons_EU_flags_Poland.png" height="24"> Podziękowania dla
 - [obsy (Cezary Jackiewicz)](https://github.com/obsy)
