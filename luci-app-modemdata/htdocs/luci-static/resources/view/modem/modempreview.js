@@ -163,7 +163,7 @@ function _progressValueDiv(valueId, labelText, descr, barId, showInitially) {
     'style': (showInitially === false ? 'display:none;' : '') 
   }, [
     E('label', { 'class': 'cbi-value-title' }, [
-      _(labelText)  // Zostawiamy tylko nazwę (np. CSQ, RSSI)
+      _(labelText)
     ]),
     E('div', { 'class': 'cbi-value-field' }, [
       E('div', { 
@@ -173,9 +173,9 @@ function _progressValueDiv(valueId, labelText, descr, barId, showInitially) {
         'style': 'width:100%;max-width:200px;'
       }, E('div')),
       E('div', {
-        'id': barId + '_label',  // Opis wyświetlany tutaj
+        'id': barId + '_label',
         'style': 'text-align:left;font-size:11px;opacity:0.8;margin-top:2px;'
-      }, _(descr))  // Opis będzie wyświetlany pod paskiem
+      }, _(descr))
     ])
   ]);
 }
@@ -791,7 +791,6 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
             window.setTimeout(() => {
                 if (!poll.active()) poll.start();
             }, 8000);
-
             return;
         }
 
