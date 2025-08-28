@@ -87,10 +87,6 @@ async function loadUCInterval(opts = { applyToGlobal: true }) {
   return interval;
 }
 
-function pop(a, message, severity) {
-    ui.addNotification(a, message, severity)
-}
-
 function popTimeout(a, message, timeout, severity) {
     ui.addTimeLimitedNotification(a, message, timeout, severity)
 }
@@ -233,7 +229,13 @@ function _setProgressBarRich(barId, metricKey, rawValue){
   let vtxt = (rawValue == null || String(rawValue).trim()==='') ? '-' : String(rawValue);
   if (unit && vtxt !== '-' && !/\bdB(m)?\b/i.test(vtxt)) vtxt += ' ' + unit;
 
-  wrap.setAttribute('title', '%s'.format(vtxt) + ' | ' + q.label + ' ');
+  let titleTxt;
+  if (vtxt === '-' && q.label === _('No data')) {
+    titleTxt = q.label;
+  } else {
+    titleTxt = '%s'.format(vtxt) + ' | ' + q.label;
+  }
+  wrap.setAttribute('title', titleTxt);
 
   let labelDiv = document.getElementById(barId + '_label');
   if (labelDiv) {
@@ -318,6 +320,13 @@ async function _readSignalsForActiveTab(forceFresh) {
   };
 }
 
+function _csqFromRssiFallback(rssiRaw) {
+  let rssi = toNumber(rssiRaw);
+  if (rssi == null || isNaN(rssi)) return null;
+  let csq = Math.round((rssi + 113) / 2);
+  return clamp(csq, 0, 31);
+}
+
 async function _updateBasicSignalsModal(){
   if (!_sigModalOpen) return;
   if (_sigInflight) return;
@@ -327,15 +336,26 @@ async function _updateBasicSignalsModal(){
     let d = await _readSignalsForActiveTab(true);
     if (!d) return;
 
+    let csqEmpty = (d.CSQ == null || String(d.CSQ).trim() === '' || String(d.CSQ) === '99');
+    if (csqEmpty) {
+      let csqCalc = _csqFromRssiFallback(d.RSSI);
+      if (csqCalc != null) {
+        d.CSQ = String(csqCalc); // używamy jak zwykłe CSQ (0..31)
+      }
+    }
+
     _setProgressBarRich('bs_bar_csq', 'CSQ', d.CSQ);
 
     let mode = (d.MODE || '').toUpperCase();
     let isLTE5G = (mode.indexOf('LTE') >= 0 || mode.indexOf('5G') >= 0);
 
-    let show = function(id, vis){ let el = document.getElementById(id); if (el) el.style.display = vis ? '' : 'none'; };
+    let show = function(id, vis){
+      let el = document.getElementById(id);
+      if (el) el.style.display = vis ? '' : 'none';
+    };
 
     if (isLTE5G) {
-      show('bs_rssi', true);  show('bs_rsrp', true);  show('bs_rsrq', true);  show('bs_sxx', true);
+      show('bs_rssi', true);   show('bs_rsrp', true);   show('bs_rsrq', true);   show('bs_sxx', true);
       show('bs_w_rssi', false); show('bs_rscp', false); show('bs_ecio', false);
 
       _setProgressBarRich('bs_bar_rssi', 'RSSI', d.RSSI);
@@ -343,7 +363,7 @@ async function _updateBasicSignalsModal(){
       _setProgressBarRich('bs_bar_rsrq', 'RSRQ', d.RSRQ);
 
       let sType = (d.SINR != null && String(d.SINR).trim() !== '') ? 'SINR' :
-                  ((d.SNR != null && String(d.SNR).trim() !== '') ? 'SNR' : 'SINR');
+                  ((d.SNR  != null && String(d.SNR ).trim() !== '') ? 'SNR'  : 'SINR');
       let sVal  = (sType === 'SINR') ? d.SINR : d.SNR;
       _setProgressBarRich('bs_bar_sxx', sType, sVal);
 
@@ -792,6 +812,11 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
                 if (!poll.active()) poll.start();
             }, 8000);
             return;
+        }
+
+        if (json?.[2]?.error && String(json[2].error).includes('Device not found')) {
+            if (poll.active()) poll.stop();
+            ui.addNotification(null, E('p', _('Waiting...')+' '+_('Device not found')), 'error');
         }
 
         let rowsWcdma = [];

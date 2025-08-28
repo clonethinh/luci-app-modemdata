@@ -8,9 +8,11 @@
 'require tools.widgets as widgets';
 
 /*
+
   Copyright 2025 Rafał Wabik - IceG - From eko.one.pl forum
 
   MIT License
+  
 */
 
 let commandOutputDialog = baseclass.extend({
@@ -99,7 +101,7 @@ return view.extend({
   handleparams: function(){
     let select = document.getElementById('mselect'); let value = select ? select.value : '';
     let device = value.split('_')[1] || '';
-    return this.handleCommand('/bin/sh', ['-x', '/usr/share/modemdata/params_mod.sh', device]);
+    return this.handleCommand('/bin/sh', ['-x', '/usr/share/modemdata/params.sh', device]);
   },
 
   handleuqmi: function(){
@@ -248,8 +250,8 @@ return view.extend({
           E('span', { class:'diag-action' }, [ E('button', { class:'cbi-button cbi-button-add', id:'s2', disabled:off_s2, click:ui.createHandlerFn(this,'handleproduct') }, _('Run')) ])
         ]),
         E('td', { class:'td left', style:'vertical-align:top; width:33%;' }, [
-          E('label', { class:'cbi-value-title' }, _("Check") + ' ' + _("params_mod.sh")),
-          E('p', {}, _("<code>sh -x /usr/share/modemdata/params_mod.sh</code>")),
+          E('label', { class:'cbi-value-title' }, _("Check") + ' ' + _("params.sh")),
+          E('p', {}, _("<code>sh -x /usr/share/modemdata/params.sh</code>")),
           E('span', { class:'diag-action' }, [ E('button', { class:'cbi-button cbi-button-add', id:'s3', disabled:off_s3, click:ui.createHandlerFn(this,'handleparams') }, _('Run')) ])
         ])
       ])

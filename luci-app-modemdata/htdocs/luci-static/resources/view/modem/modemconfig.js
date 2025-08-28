@@ -8,9 +8,11 @@
 'require tools.widgets as widgets';
 
 /*
+
   Copyright 2025 Rafał Wabik - IceG - From eko.one.pl forum
 
   MIT License
+  
 */
 
 let pkg = {

@@ -637,3 +637,6 @@ msgstr "Pasmo podstawowe"
 msgid "Available offers"
 msgstr "Dostępne propozycje"
 
+msgid "Device not found"
+msgstr "Urządzenia nie znaleziono"
+
