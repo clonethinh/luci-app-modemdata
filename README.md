@@ -288,7 +288,7 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 > "Diagnostics" window / Okno diagnostyki:
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md2b.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/mdd1.png?raw=true)
 
 > "Defined modems" window / Okno zdefiniowanych modem(-ów):
 
