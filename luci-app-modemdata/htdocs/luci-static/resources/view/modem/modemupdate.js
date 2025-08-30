@@ -51,7 +51,7 @@ let ModemDataInfo = form.DummyValue.extend({
 				]),
 
 				E('div', { 'class': 'cbi-value' }, [
-					E('label', { 'class': 'cbi-value-title', 'style': 'padding-top:0rem' }, _('Available offers')),
+					E('label', { 'class': 'cbi-value-title', 'style': 'padding-top:0rem' }, _('Available options')),
 					E('div', { 'class': 'cbi-value-field', 'id': 'actions-obsy' }, [
 						E('div', btnRow, [
 							E('button', {
@@ -81,7 +81,7 @@ let ModemDataInfo = form.DummyValue.extend({
 				]),
 
 				E('div', { 'class': 'cbi-value' }, [
-					E('label', { 'class': 'cbi-value-title', 'style': 'padding-top:0rem' }, _('Available offers')),
+					E('label', { 'class': 'cbi-value-title', 'style': 'padding-top:0rem' }, _('Available options')),
 					E('div', { 'class': 'cbi-value-field', 'id': 'actions-iceg' }, [
 						E('div', btnRow, [
 							E('button', {

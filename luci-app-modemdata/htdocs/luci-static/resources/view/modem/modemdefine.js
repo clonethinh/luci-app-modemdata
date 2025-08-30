@@ -258,14 +258,28 @@ packageDialog: baseclass.extend({
   }),
 
   checkPackages: function() {
-    return fs.exec_direct('/usr/bin/opkg', ['list-installed'], 'text').catch(function () {
-      return fs.exec_direct('/usr/libexec/package-manager-call', ['list-installed'], 'text').catch(function () {
-        return '';
+      return fs.exec_direct('/usr/bin/opkg', ['list-installed'], 'text')
+        .catch(function () {
+          return fs.exec_direct('/usr/libexec/opkg-call', ['list-installed'], 'text')
+            .catch(function () {
+              return fs.exec_direct('/usr/libexec/package-manager-call', ['list-installed'], 'text')
+                .catch(function () {
+                  return '';
+                });
+            });
+        })
+        .then(function (data) {
+          data = (data || '').trim();
+          return data ? data.split('\n') : [];
+        });
+  },
+
+  _isPackageInstalled: function(pkgName) {
+      return this.checkPackages().then(function(installedPackages) {
+        return installedPackages.some(function(pkg) {
+          return pkg.includes(pkgName);
+        });
       });
-    }).then(function (data) {
-      data = (data || '').trim();
-      return data ? data.split('\n') : [];
-    });
   },
 
   render: function (data) {

@@ -634,8 +634,8 @@ msgstr "Urządzenie jest zajęte"
 msgid "Primary band"
 msgstr "Pasmo podstawowe"
 
-msgid "Available offers"
-msgstr "Dostępne propozycje"
+msgid "Available options"
+msgstr "Dostępne opcje"
 
 msgid "Device not found"
 msgstr "Urządzenia nie znaleziono"
