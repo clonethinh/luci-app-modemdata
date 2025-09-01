@@ -803,61 +803,75 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
         let json = Object.values(jsonraw);
         if (!json || json.length < 3 || !json[0] || !json[1] || !json[2]) return;
 
-        if (json?.[2]?.error && String(json[2].error).includes('Device is busy')) {
-            if (poll.active()) poll.stop();
-            
-            popTimeout(null, E('p', _('Waiting...')+' '+_('Device is busy')), 5000, 'info');
+        if (json?.[2]?.error) {
+            const err = String(json[2].error);
 
-            window.setTimeout(() => {
-                if (!poll.active()) poll.start();
-            }, 8000);
+            if (err.includes('Device is busy')) {
+                if (poll.active()) poll.stop();
+
+                popTimeout(null, E('p', _('Waiting...')+' '+_('Device is busy')), 5000, 'info');
+
+                window.setTimeout(() => {
+                    if (!poll.active()) poll.start();
+                }, 8000);
+            } 
+            else if (err.includes('Device not found')) {
+                if (poll.active()) poll.stop();
+
+                ui.addNotification(null, E('p', _('Waiting...')+' '+_('Device not found')), 'error');
+            }
+
             return;
         }
 
-        if (json?.[2]?.error && String(json[2].error).includes('Device not found')) {
-            if (poll.active()) poll.stop();
-            ui.addNotification(null, E('p', _('Waiting...')+' '+_('Device not found')), 'error');
-        }
-
         let rowsWcdma = [];
-        let rowsLte = [];
+        let rowsLte   = [];
 
         let wcdmaTable = document.getElementById(modem.wcdmaTableId);
-        let lteTable = document.getElementById(modem.lteTableId);
+        let lteTable   = document.getElementById(modem.lteTableId);
 
-        // BANDS
-        let modeRaw = json[2].mode || '';
+        const addonArr = Array.isArray(json?.[2]?.addon) ? json[2].addon : [];
+        const getAddon = (key) => (addonArr.find(i => i.key === key) || {}).value;
+
+        let modeRaw   = json?.[2]?.mode || '';
         let modeLower = modeRaw.toLowerCase();
-        let bands = (json[2].addon || []).filter(function(item) {
-          return item.key === 'Primary band' || /^\(S\d+\) band$/.test(item.key);
-        });
 
-        // FAKE BAND FOR MM
-        if (bands.length === 0) {
-          bands.push({ key: 'Primary band', value: _('(no data)') });
-        }
+        const bandsFiltered = addonArr.filter(item =>
+          item.key === 'Primary band' || /^\(S\d+\) band$/.test(item.key)
+        );
 
-        // WCDMA (NO LTE/5G & BANDS)
-        if (!modeLower.match(/lte|5g/) && bands.length === 0) {
+        const primaryBandFromAddon = getAddon('Primary band');
+        const bwULFromAddon        = getAddon('Bandwidth UL');
+        const bwDLFromAddon        = getAddon('Bandwidth DL');
+
+        const hasSCC = bandsFiltered.some(b => /^\(S\d+\) band$/.test(b.key));
+
+        const cutBeforeAt = (str) => {
+          const s = String(str ?? '');
+          return s.split('@')[0].trim() || '-';
+        };
+
+        if (!modeLower.match(/lte|5g/) && bandsFiltered.length === 0) {
           let bs = document.getElementById(modem.bandshowId);
           if (bs) bs.style.display = 'block';
           if (lteTable) lteTable.style.display = 'none';
           if (wcdmaTable) wcdmaTable.style.display = 'table';
 
-          let uarfcn = (json[2].addon.find(function(i){ return i.key==='UARFCN'; })||{}).value || '-';
-          let rssi  = (json[2].addon.find(function(i){ return i.key==='RSSI'; })||{}).value  || '-';
-          let rscp  = (json[2].addon.find(function(i){ return i.key==='RSCP'; })||{}).value  || '-';
-          let ecio  = (json[2].addon.find(function(i){ return i.key==='ECIO'; })||{}).value  || '-';
+          const uarfcn = getAddon('UARFCN') || '-';
+          const rssi   = getAddon('RSSI')   || '-';
+          const rscp   = getAddon('RSCP')   || '-';
+          const ecio   = getAddon('ECIO')   || '-';
 
           rowsWcdma.push([
             modeRaw || '-',
             uarfcn,
             !isNaN(parseInt(rssi,10)) ? signalCell(rssi, getSignalLabel(rssi,'RSSI_wcdma').label, getSignalLabel(rssi,'RSSI_wcdma').color) : E('div', {}, _('')),
-            !isNaN(parseInt(rscp,10)) ? signalCell(rscp, getSignalLabel(rscp,'RSCP').label, getSignalLabel(rscp,'RSCP').color) : E('div', {}, _('')),
-            !isNaN(parseInt(ecio,10)) ? signalCell(ecio, getSignalLabel(ecio,'ECIO').label, getSignalLabel(ecio,'ECIO').color) : E('div', {}, _(''))
+            !isNaN(parseInt(rscp,10)) ? signalCell(rscp, getSignalLabel(rscp,'RSCP').label,       getSignalLabel(rscp,'RSCP').color)       : E('div', {}, _('')),
+            !isNaN(parseInt(ecio,10)) ? signalCell(ecio, getSignalLabel(ecio,'ECIO').label,       getSignalLabel(ecio,'ECIO').color)       : E('div', {}, _(''))
           ]);
 
           if (wcdmaTable) cbi_update_table(wcdmaTable, rowsWcdma);
+
         } else {
           // LTE/5G
           let bs2 = document.getElementById(modem.bandshowId);
@@ -865,80 +879,126 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
           if (lteTable) lteTable.style.display = 'table';
           if (wcdmaTable) wcdmaTable.style.display = 'none';
 
-          let getFirstValueWithUnit = function(key) {
-            let raw = (json[2].addon.find(function(i){ return i.key === key; })||{}).value || '-';
-            let parts = raw.split('/');
-            let first = parts[0] ? parts[0].trim() : '-';
+          let bands = bandsFiltered.slice();
+          if (bands.length === 0 && primaryBandFromAddon) {
+            bands.push({ key: 'Primary band', value: primaryBandFromAddon });
+          }
+          if (bands.length === 0) {
+            bands.push({ key: 'Primary band', value: _('(no data)') });
+          }
+
+          const getFirstValueWithUnit = function (key) {
+            let raw = getAddon(key) || '-';
+            let parts  = String(raw).split('/');
+            let first  = parts[0] ? parts[0].trim() : '-';
             let second = parts[1] ? parts[1].trim() : '';
             let unitMatch = second && second.match(/(dBm|dB)$/i);
             return unitMatch ? (first + ' ' + unitMatch[1]) : first;
           };
 
-          for (let i = 0; i < bands.length; i++) {
-            let bandKey = bands[i].key;
-            let bandLabel = '';
+          const makeBwCell = (ul, dl, fallback) => {
+            const haveUL = !!ul;
+            const haveDL = !!dl;
 
-            if (bandKey === 'Primary band') bandLabel = 'PCC';
-            else {
-              let bandIndexM = bandKey.match(/\d+/);
+            if (haveUL && haveDL) {
+              return E('div', {}, [
+                _('UL: ' + ul),
+                E('br', {}),
+                _('DL: ' + dl)
+              ]);
+            }
+            if (haveUL) {
+              return E('div', {}, [_('UL: ' + ul)]);
+            }
+            if (haveDL) {
+              return E('div', {}, [_('DL: ' + dl)]);
+            }
+            return typeof fallback === 'string'
+              ? E('div', {}, _(fallback))
+              : (fallback ?? E('div', {}, _('-')));
+          };
+
+          for (let i = 0; i < bands.length; i++) {
+            const bandKey = bands[i].key;
+
+            let bandLabel = '';
+            if (bandKey === 'Primary band') {
+              bandLabel = 'PCC';
+            } else {
+              const bandIndexM = bandKey.match(/\d+/);
               if (bandIndexM) bandLabel = 'SCC' + bandIndexM[0];
             }
 
-            let bandValue = (bands[i].value.split(' @')[0]) || '-';
-            let bandwidthValue = (bands[i].value.split(' @')[1] || '').trim() || '-';
+            const rawBandVal = bands[i].value || '-';
+            const parsedBand = cutBeforeAt(rawBandVal);
+            const parsedBW   = (String(rawBandVal).split('@')[1] || '').trim() || '-';
 
-            let row = [ bandLabel + ' ' + bandValue, bandwidthValue ];
+            let bandValueForRow = parsedBand;
+            let bandwidthForRow = parsedBW;
 
-            let bandIndexM2 = bandKey.match(/\d+/);
-            if (bandIndexM2) {
+            if (bandKey === 'Primary band' && !hasSCC) {
+              const haveUL = !!bwULFromAddon;
+              const haveDL = !!bwDLFromAddon;
+              const haveBothBW = haveUL && haveDL;
+
+              if (haveBothBW) {
+                const src = primaryBandFromAddon || rawBandVal || '';
+                bandValueForRow = cutBeforeAt(src);
+                bandwidthForRow = makeBwCell(bwULFromAddon, bwDLFromAddon, '-');
+              } else {
+                if (primaryBandFromAddon) {
+                  bandValueForRow = cutBeforeAt(primaryBandFromAddon);
+                }
+                bandwidthForRow = makeBwCell(bwULFromAddon, bwDLFromAddon, parsedBW || '-');
+              }
+            }
+            bandValueForRow = cutBeforeAt(bandValueForRow);
+
+            let row = [ `${bandLabel} ${bandValueForRow}`, bandwidthForRow ];
+
+            const sccIndexM = bandKey.match(/\d+/);
+            if (sccIndexM) {
               // SCC
-              let n = bandIndexM2[0];
-              let getVal = function(k){
-                let o = json[2].addon.find(function(x){ return x.key === k; });
-                return o ? o.value : '-';
-              };
+              const n = sccIndexM[0];
+              const getVal = (k) => (addonArr.find(x => x.key === k) || {}).value || '-';
 
-              let sinr = getVal('(S' + n + ') SINR');
-              let snr  = getVal('(S' + n + ') SNR');
-              let signalType = sinr ? 'SINR' : (snr ? 'SNR' : null);
-              let signalValue = sinr || snr || '-';
-              let sl = getSignalLabel(signalValue, signalType);
-              let signalLabel = sl.label;
-              let signalColor = sl.color;
-              let formattedSignalValue = !isNaN(parseFloat(signalValue))
-                ? (String(signalValue).indexOf('dB') >= 0 ? signalValue : (signalValue + ' dB'))
+              const sinr = getVal(`(S${n}) SINR`);
+              const snr  = getVal(`(S${n}) SNR`);
+              const signalType = sinr ? 'SINR' : (snr ? 'SNR' : null);
+              const signalValue = sinr || snr || '-';
+              const sl = getSignalLabel(signalValue, signalType);
+              const formattedSignalValue = !isNaN(parseFloat(signalValue))
+                ? (String(signalValue).includes('dB') ? signalValue : (signalValue + ' dB'))
                 : '-';
 
               row.push(
-                getVal('(S' + n + ') PCI'),
-                getVal('(S' + n + ') EARFCN'),
-                !isNaN(parseInt(getVal('(S' + n + ') RSSI'),10)) ? signalCell(getVal('(S' + n + ') RSSI'), getSignalLabel(getVal('(S' + n + ') RSSI'),'RSSI').label, getSignalLabel(getVal('(S' + n + ') RSSI'),'RSSI').color) : E('div', {}, _('')),
-                !isNaN(parseInt(getVal('(S' + n + ') RSRP'),10)) ? signalCell(getVal('(S' + n + ') RSRP'), getSignalLabel(getVal('(S' + n + ') RSRP'),'RSRP').label, getSignalLabel(getVal('(S' + n + ') RSRP'),'RSRP').color) : E('div', {}, _('')),
-                !isNaN(parseInt(getVal('(S' + n + ') RSRQ'),10)) ? signalCell(getVal('(S' + n + ') RSRQ'), getSignalLabel(getVal('(S' + n + ') RSRQ'),'RSRQ').label, getSignalLabel(getVal('(S' + n + ') RSRQ'),'RSRQ').color) : E('div', {}, _('')),
-                formattedSignalValue !== '-' ? signalCell(formattedSignalValue, signalLabel, signalColor) : E('div', {}, _(''))
+                getVal(`(S${n}) PCI`),
+                getVal(`(S${n}) EARFCN`),
+                !isNaN(parseInt(getVal(`(S${n}) RSSI`),10)) ? signalCell(getVal(`(S${n}) RSSI`), getSignalLabel(getVal(`(S${n}) RSSI`),'RSSI').label, getSignalLabel(getVal(`(S${n}) RSSI`),'RSSI').color) : E('div', {}, _('')),
+                !isNaN(parseInt(getVal(`(S${n}) RSRP`),10)) ? signalCell(getVal(`(S${n}) RSRP`), getSignalLabel(getVal(`(S${n}) RSRP`),'RSRP').label, getSignalLabel(getVal(`(S${n}) RSRP`),'RSRP').color) : E('div', {}, _('')),
+                !isNaN(parseInt(getVal(`(S${n}) RSRQ`),10)) ? signalCell(getVal(`(S${n}) RSRQ`), getSignalLabel(getVal(`(S${n}) RSRQ`),'RSRQ').label, getSignalLabel(getVal(`(S${n}) RSRQ`),'RSRQ').color) : E('div', {}, _('')),
+                formattedSignalValue !== '-' ? signalCell(formattedSignalValue, sl.label, sl.color) : E('div', {}, _(''))
               );
 
               rowsLte.push(row);
             } else {
               // PCC
-              let pci = (json[2].addon.find(function(i){ return i.key==='PCI'; })||{}).value || '-';
+              const pci = getAddon('PCI') || '-';
 
-              let earfcn = (json[2].addon.find(function(i){ return i.key==='EARFCN'; })||{}).value;
+              let earfcn = getAddon('EARFCN');
               if (!earfcn) {
-                let earfcnDl = (json[2].addon.find(function(i){ return i.key==='EARFCN DL'; })||{}).value || '-';
-                let earfcnUl = (json[2].addon.find(function(i){ return i.key==='EARFCN UL'; })||{}).value || '-';
+                const earfcnDl = getAddon('EARFCN DL') || '-';
+                const earfcnUl = getAddon('EARFCN UL') || '-';
                 earfcn = 'DL: ' + earfcnDl + ' UL: ' + earfcnUl;
               }
 
-              let sinr0 = (json[2].addon.find(function(i){ return i.key==='SINR'; })||{}).value;
-              let snr0  = (json[2].addon.find(function(i){ return i.key==='SNR'; })||{}).value;
-              let signalType0 = sinr0 ? 'SINR' : (snr0 ? 'SNR' : null);
-              let signalValue0 = sinr0 || snr0 || '-';
-              let sl0 = getSignalLabel(signalValue0, signalType0);
-              let signalLabel0 = sl0.label;
-              let signalColor0 = sl0.color;
-              let formattedSignalValue0 = !isNaN(parseFloat(signalValue0))
-                ? (String(signalValue0).indexOf('dB') >= 0 ? signalValue0 : (signalValue0 + ' dB'))
+              const sinr0 = getAddon('SINR');
+              const snr0  = getAddon('SNR');
+              const signalType0  = sinr0 ? 'SINR' : (snr0 ? 'SNR' : null);
+              const signalValue0 = sinr0 || snr0 || '-';
+              const sl0 = getSignalLabel(signalValue0, signalType0);
+              const formattedSignalValue0 = !isNaN(parseFloat(signalValue0))
+                ? (String(signalValue0).includes('dB') ? signalValue0 : (signalValue0 + ' dB'))
                 : '-';
 
               row.push(
@@ -946,8 +1006,8 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
                 earfcn,
                 !isNaN(parseFloat(getFirstValueWithUnit('RSSI'))) ? signalCell(getFirstValueWithUnit('RSSI'), getSignalLabel(getFirstValueWithUnit('RSSI'),'RSSI').label, getSignalLabel(getFirstValueWithUnit('RSSI'),'RSSI').color) : E('div', {}, _('')),
                 !isNaN(parseFloat(getFirstValueWithUnit('RSRP'))) ? signalCell(getFirstValueWithUnit('RSRP'), getSignalLabel(getFirstValueWithUnit('RSRP'),'RSRP').label, getSignalLabel(getFirstValueWithUnit('RSRP'),'RSRP').color) : E('div', {}, _('')),
-                !isNaN(parseInt((json[2].addon.find(function(i){ return i.key==='RSRQ'; })||{}).value,10)) ? signalCell((json[2].addon.find(function(i){ return i.key==='RSRQ'; })||{}).value, getSignalLabel((json[2].addon.find(function(i){ return i.key==='RSRQ'; })||{}).value,'RSRQ').label, getSignalLabel((json[2].addon.find(function(i){ return i.key==='RSRQ'; })||{}).value,'RSRQ').color) : E('div', {}, _('')),
-                formattedSignalValue0 !== '-' ? signalCell(formattedSignalValue0, signalLabel0, signalColor0) : E('div', {}, _(''))
+                !isNaN(parseInt(getAddon('RSRQ'),10)) ? signalCell(getAddon('RSRQ'), getSignalLabel(getAddon('RSRQ'),'RSRQ').label, getSignalLabel(getAddon('RSRQ'),'RSRQ').color) : E('div', {}, _('')),
+                formattedSignalValue0 !== '-' ? signalCell(formattedSignalValue0, sl0.label, sl0.color) : E('div', {}, _(''))
               );
 
               rowsLte.push(row);
@@ -956,9 +1016,9 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
 
           if (lteTable) cbi_update_table(lteTable, rowsLte);
 
-          let tsnr = {
-            sinr: (json[2].addon.find(function(i){ return i.key==='SINR'; }) || {}).value,
-            snr:  (json[2].addon.find(function(i){ return i.key==='SNR'; })  || {}).value
+          const tsnr = {
+            sinr: getAddon('SINR'),
+            snr:  getAddon('SNR')
           };
           updateTableToValues(tsnr, modem.index);
         }
@@ -1424,14 +1484,14 @@ return view.extend({
         'style': 'border:1px solid var(--border-color-medium)!important; table-layout:fixed; border-collapse:collapse; width:100%; display:none; font-size:12px;'
       },
         E('tr', { 'class': 'tr table-titles' }, [
-          E('th', { 'class': 'th left', 'style': 'min-width:110px; width:110px;' }, lteTableTitles[0]),
-          E('th', { 'class': 'th left', 'style': 'min-width:80px;  width:80px;'  }, lteTableTitles[1]),
-          E('th', { 'class': 'th left', 'style': 'min-width:80px;  width:80px;'  }, lteTableTitles[2]),
-          E('th', { 'class': 'th left', 'style': 'min-width:55px;  width:55px;'  }, lteTableTitles[3]),
-          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[4]),
-          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[5]),
-          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[6]),
-          E('th', { 'class': 'th left', 'style': 'min-width:100px;  width:100px;'  }, lteTableTitles[7])
+          E('th', { 'class': 'th left', 'style': 'min-width:75px; width:85px;' }, lteTableTitles[0]),
+          E('th', { 'class': 'th left', 'style': 'min-width:55px;  width:60px;'  }, lteTableTitles[1]),
+          E('th', { 'class': 'th left', 'style': 'min-width:50px;  width:60px;'  }, lteTableTitles[2]),
+          E('th', { 'class': 'th left', 'style': 'min-width:35px;  width:45px;'  }, lteTableTitles[3]),
+          E('th', { 'class': 'th left', 'style': 'min-width:90px;  width:100px;'  }, lteTableTitles[4]),
+          E('th', { 'class': 'th left', 'style': 'min-width:90px;  width:100px;'  }, lteTableTitles[5]),
+          E('th', { 'class': 'th left', 'style': 'min-width:90px;  width:100px;'  }, lteTableTitles[6]),
+          E('th', { 'class': 'th left', 'style': 'min-width:90px;  width:100px;'  }, lteTableTitles[7])
         ])
       );
 
