@@ -831,20 +831,20 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
         let lteTable   = document.getElementById(modem.lteTableId);
 
         const addonArr = Array.isArray(json?.[2]?.addon) ? json[2].addon : [];
-        const getAddon = (key) => (addonArr.find(i => i.key === key) || {}).value;
+        const getAddon = (key) => (addonArr.find(i => i && i['key'] === key) || {})['value'];
 
         let modeRaw   = json?.[2]?.mode || '';
         let modeLower = modeRaw.toLowerCase();
 
         const bandsFiltered = addonArr.filter(item =>
-          item.key === 'Primary band' || /^\(S\d+\) band$/.test(item.key)
+          item && (item['key'] === 'Primary band' || /^\(S\d+\) band$/.test(item['key']))
         );
 
         const primaryBandFromAddon = getAddon('Primary band');
         const bwULFromAddon        = getAddon('Bandwidth UL');
         const bwDLFromAddon        = getAddon('Bandwidth DL');
 
-        const hasSCC = bandsFiltered.some(b => /^\(S\d+\) band$/.test(b.key));
+        const hasSCC = bandsFiltered.some(b => b && /^\(S\d+\) band$/.test(b['key']));
 
         const cutBeforeAt = (str) => {
           const s = String(str ?? '');
@@ -881,10 +881,10 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
 
           let bands = bandsFiltered.slice();
           if (bands.length === 0 && primaryBandFromAddon) {
-            bands.push({ key: 'Primary band', value: primaryBandFromAddon });
+            bands.push({ 'key': 'Primary band', 'value': primaryBandFromAddon });
           }
           if (bands.length === 0) {
-            bands.push({ key: 'Primary band', value: _('(no data)') });
+            bands.push({ 'key': 'Primary band', 'value': _('(no data)') });
           }
 
           const getFirstValueWithUnit = function (key) {
@@ -919,7 +919,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
           };
 
           for (let i = 0; i < bands.length; i++) {
-            const bandKey = bands[i].key;
+            const bandKey = bands[i]['key'];
 
             let bandLabel = '';
             if (bandKey === 'Primary band') {
@@ -929,7 +929,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
               if (bandIndexM) bandLabel = 'SCC' + bandIndexM[0];
             }
 
-            const rawBandVal = bands[i].value || '-';
+            const rawBandVal = bands[i]['value'] || '-';
             const parsedBand = cutBeforeAt(rawBandVal);
             const parsedBW   = (String(rawBandVal).split('@')[1] || '').trim() || '-';
 
@@ -954,16 +954,16 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
             }
             bandValueForRow = cutBeforeAt(bandValueForRow);
 
-            let row = [ `${bandLabel} ${bandValueForRow}`, bandwidthForRow ];
+            let row = [ bandLabel + ' ' + bandValueForRow, bandwidthForRow ];
 
             const sccIndexM = bandKey.match(/\d+/);
             if (sccIndexM) {
               // SCC
               const n = sccIndexM[0];
-              const getVal = (k) => (addonArr.find(x => x.key === k) || {}).value || '-';
+              const getVal = (k) => ((addonArr.find(x => x && x['key'] === k) || {})['value'] || '-');
 
-              const sinr = getVal(`(S${n}) SINR`);
-              const snr  = getVal(`(S${n}) SNR`);
+              const sinr = getVal('(S' + n + ') SINR');
+              const snr  = getVal('(S' + n + ') SNR');
               const signalType = sinr ? 'SINR' : (snr ? 'SNR' : null);
               const signalValue = sinr || snr || '-';
               const sl = getSignalLabel(signalValue, signalType);
@@ -972,11 +972,11 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
                 : '-';
 
               row.push(
-                getVal(`(S${n}) PCI`),
-                getVal(`(S${n}) EARFCN`),
-                !isNaN(parseInt(getVal(`(S${n}) RSSI`),10)) ? signalCell(getVal(`(S${n}) RSSI`), getSignalLabel(getVal(`(S${n}) RSSI`),'RSSI').label, getSignalLabel(getVal(`(S${n}) RSSI`),'RSSI').color) : E('div', {}, _('')),
-                !isNaN(parseInt(getVal(`(S${n}) RSRP`),10)) ? signalCell(getVal(`(S${n}) RSRP`), getSignalLabel(getVal(`(S${n}) RSRP`),'RSRP').label, getSignalLabel(getVal(`(S${n}) RSRP`),'RSRP').color) : E('div', {}, _('')),
-                !isNaN(parseInt(getVal(`(S${n}) RSRQ`),10)) ? signalCell(getVal(`(S${n}) RSRQ`), getSignalLabel(getVal(`(S${n}) RSRQ`),'RSRQ').label, getSignalLabel(getVal(`(S${n}) RSRQ`),'RSRQ').color) : E('div', {}, _('')),
+                getVal('(S' + n + ') PCI'),
+                getVal('(S' + n + ') EARFCN'),
+                !isNaN(parseInt(getVal('(S' + n + ') RSSI'),10)) ? signalCell(getVal('(S' + n + ') RSSI'), getSignalLabel(getVal('(S' + n + ') RSSI'),'RSSI').label, getSignalLabel(getVal('(S' + n + ') RSSI'),'RSSI').color) : E('div', {}, _('')),
+                !isNaN(parseInt(getVal('(S' + n + ') RSRP'),10)) ? signalCell(getVal('(S' + n + ') RSRP'), getSignalLabel(getVal('(S' + n + ') RSRP'),'RSRP').label, getSignalLabel(getVal('(S' + n + ') RSRP'),'RSRP').color) : E('div', {}, _('')),
+                !isNaN(parseInt(getVal('(S' + n + ') RSRQ'),10)) ? signalCell(getVal('(S' + n + ') RSRQ'), getSignalLabel(getVal('(S' + n + ') RSRQ'),'RSRQ').label, getSignalLabel(getVal('(S' + n + ') RSRQ'),'RSRQ').color) : E('div', {}, _('')),
                 formattedSignalValue !== '-' ? signalCell(formattedSignalValue, sl.label, sl.color) : E('div', {}, _(''))
               );
 
@@ -1001,11 +1001,14 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
                 ? (String(signalValue0).includes('dB') ? signalValue0 : (signalValue0 + ' dB'))
                 : '-';
 
+              const rssiFirst = getFirstValueWithUnit('RSSI');
+              const rsrpFirst = getFirstValueWithUnit('RSRP');
+
               row.push(
                 pci,
                 earfcn,
-                !isNaN(parseFloat(getFirstValueWithUnit('RSSI'))) ? signalCell(getFirstValueWithUnit('RSSI'), getSignalLabel(getFirstValueWithUnit('RSSI'),'RSSI').label, getSignalLabel(getFirstValueWithUnit('RSSI'),'RSSI').color) : E('div', {}, _('')),
-                !isNaN(parseFloat(getFirstValueWithUnit('RSRP'))) ? signalCell(getFirstValueWithUnit('RSRP'), getSignalLabel(getFirstValueWithUnit('RSRP'),'RSRP').label, getSignalLabel(getFirstValueWithUnit('RSRP'),'RSRP').color) : E('div', {}, _('')),
+                !isNaN(parseFloat(rssiFirst)) ? signalCell(rssiFirst, getSignalLabel(rssiFirst,'RSSI').label, getSignalLabel(rssiFirst,'RSSI').color) : E('div', {}, _('')),
+                !isNaN(parseFloat(rsrpFirst)) ? signalCell(rsrpFirst, getSignalLabel(rsrpFirst,'RSRP').label, getSignalLabel(rsrpFirst,'RSRP').color) : E('div', {}, _('')),
                 !isNaN(parseInt(getAddon('RSRQ'),10)) ? signalCell(getAddon('RSRQ'), getSignalLabel(getAddon('RSRQ'),'RSRQ').label, getSignalLabel(getAddon('RSRQ'),'RSRQ').color) : E('div', {}, _('')),
                 formattedSignalValue0 !== '-' ? signalCell(formattedSignalValue0, sl0.label, sl0.color) : E('div', {}, _(''))
               );
