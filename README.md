@@ -11,26 +11,26 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 > <img src="https://raw.githubusercontent.com/4IceG/Personal_data/master/dooffy_design_icons_EU_flags_Poland.png" height="24"> Interfejs LuCI JS dla pakietu [modemdata](https://github.com/obsy/modemdata). W przyszłości zastąpi on pakiet luci-app-3ginfo-lite.
 
 > [!IMPORTANT]
-> Due to the layout, the package is dedicated to the luci-theme-bootstrap.
+> ***Due to the layout, the package is dedicated to the luci-theme-bootstrap.***
 > 
-> Ze względu na układ pakiet dedykowany jest dla motywu luci-theme-bootstrap.
+> ***Ze względu na układ pakiet dedykowany jest dla motywu luci-theme-bootstrap.***
 
 > [!IMPORTANT]
-> Required Packages:
+> ***Required Packages:***
 > 
-> serial:
+> ***serial:***
 > sms-tool, kmod-usb-serial-option, kmod-usb-serial
 > 
-> QMI/MBIM protocol:
+> ***QMI/MBIM protocol:***
 > kmod-usb-net-qmi-wwan / kmod-usb-net-cdc-mbim, uqmi
 >
-> ModemManager protocol:
+> ***ModemManager protocol:***
 > modemmanager
 >
-> hilink (ecm):
+> ***hilink (ecm):***
 > wget-ssl
 
-### Supported usb devices:
+### Supported usb devices (serial mode):
 
 <details>
    <summary>Pokaż | Show me</summary>
@@ -248,7 +248,7 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 ```
 </details>
 
-### Supported pci devices:
+### Supported pci devices (serial mode):
 
 
 <details>
