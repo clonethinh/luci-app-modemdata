@@ -897,25 +897,26 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
           };
 
           const makeBwCell = (ul, dl, fallback) => {
-            const haveUL = !!ul;
-            const haveDL = !!dl;
+              const haveUL = (ul && String(ul).trim() !== '-' && String(ul).trim() !== '');
+              const haveDL = (dl && String(dl).trim() !== '-' && String(dl).trim() !== '');
 
-            if (haveUL && haveDL) {
-              return E('div', {}, [
-                _('UL: ' + ul),
-                E('br', {}),
-                _('DL: ' + dl)
-              ]);
-            }
-            if (haveUL) {
-              return E('div', {}, [_('UL: ' + ul)]);
-            }
-            if (haveDL) {
-              return E('div', {}, [_('DL: ' + dl)]);
-            }
-            return typeof fallback === 'string'
-              ? E('div', {}, _(fallback))
-              : (fallback ?? E('div', {}, _('-')));
+              if (haveUL && haveDL) {
+                return E('div', {}, [
+                  _('UL: ' + ul),
+                  E('br', {}),
+                  _('DL: ' + dl)
+                ]);
+              }
+              if (haveUL) {
+                return E('div', {}, [_('UL: ' + ul)]);
+              }
+              if (haveDL) {
+                return E('div', {}, [_('DL: ' + dl)]);
+              }
+
+              return typeof fallback === 'string'
+                ? E('div', {}, _(fallback))
+                : (fallback ?? E('div', {}, _('-')));
           };
 
           for (let i = 0; i < bands.length; i++) {
@@ -1612,7 +1613,7 @@ return view.extend({
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Cell ID') + ':'),
                 E('span', {
-                  'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%; display:inline-block; cursor:pointer;',
+                  'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:42%; display:inline-block; cursor:pointer;',
                   'id': 'cell_' + i, 'title': '-'
                 }, [ '-' ])
               ]),
