@@ -294,9 +294,9 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 > "Defined modems" window / Okno zdefiniowanych modem(-ów):
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3b.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/mlaswer.png?raw=true)
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3c.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/masdad.png?raw=true)
 
 ![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3d.png?raw=true)
 
