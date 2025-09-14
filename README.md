@@ -282,11 +282,11 @@ LuCI JS interface for [modemdata](https://github.com/obsy/modemdata) package. In
 
 > "Modem(s)" window / Okno Modem(-ów):
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3a.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/mdlast3a.png?raw=true)
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3b.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/mdlast3b.png?raw=true)
 
-![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/md3c.png?raw=true)
+![](https://github.com/4IceG/Personal_data/blob/master/zrzuty/modemdata/mdlast3c.png?raw=true)
 
 > "Diagnostics" window / Okno diagnostyki:
 
