@@ -640,3 +640,4 @@ msgstr "Доступные опции"
 msgid "Device not found"
 msgstr "Устройство не найдено"
 
+

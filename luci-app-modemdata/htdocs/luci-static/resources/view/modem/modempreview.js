@@ -30,6 +30,7 @@ let _mainPollWasActive = false;
 let _sigModalOpen = false;
 let _sigModalTimer = null;
 let _sigInflight = false;
+let _sigModalIndex = null;
 
 function setUpdateMessage(el, sec) {
   if (!el) return;
@@ -85,6 +86,25 @@ async function loadUCInterval(opts = { applyToGlobal: true }) {
     }
   }
   return interval;
+}
+
+// 1-sec tick
+function updateDataTick(runFetchFn) {
+  let tick = poll.tick || 0;
+  let interval = refresh.interval > 0 ? refresh.interval : 0;
+
+  let sec = interval > 0 ? interval - (tick % interval || interval) : -1;
+
+  if (refresh.labelEl && sec !== refresh.lastSec) {
+    setUpdateMessage(refresh.labelEl, sec);
+    refresh.lastSec = sec;
+  }
+
+  if (interval && sec === 0 && typeof runFetchFn === 'function') {
+    return runFetchFn();
+  }
+
+  return Promise.resolve();
 }
 
 function popTimeout(a, message, timeout, severity) {
@@ -198,7 +218,6 @@ function _setProgressBarRich(barId, metricKey, rawValue){
   if (oldHint) oldHint.remove();
 
   let percent = 0;
-  let hasValue = !(rawValue == null || String(rawValue).trim() === '' || (metricKey === 'CSQ' && String(rawValue) === '99'));
 
   if (metricKey === 'CSQ') {
     let v = toNumber(rawValue);
@@ -246,15 +265,7 @@ function _setProgressBarRich(barId, metricKey, rawValue){
   }
 }
 
-function _getActiveTabIndex() {
-  let activeTab = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
-  if (!activeTab) return null;
-  let idx = parseInt(String(activeTab.getAttribute('data-tab') || '').replace('tab', ''), 10);
-  return isNaN(idx) ? null : idx;
-}
-
-async function _readSignalsForActiveTab(forceFresh) {
-  let idx = _getActiveTabIndex();
+async function _readSignalsForIndex(idx, forceFresh) {
   if (idx == null) return null;
 
   let cached = _latestJsonByIndex[idx];
@@ -330,17 +341,18 @@ function _csqFromRssiFallback(rssiRaw) {
 async function _updateBasicSignalsModal(){
   if (!_sigModalOpen) return;
   if (_sigInflight) return;
+  if (_sigModalIndex == null) return;
   _sigInflight = true;
 
   try {
-    let d = await _readSignalsForActiveTab(true);
+    let d = await _readSignalsForIndex(_sigModalIndex, true);
     if (!d) return;
 
     let csqEmpty = (d.CSQ == null || String(d.CSQ).trim() === '' || String(d.CSQ) === '99');
     if (csqEmpty) {
       let csqCalc = _csqFromRssiFallback(d.RSSI);
       if (csqCalc != null) {
-        d.CSQ = String(csqCalc); // używamy jak zwykłe CSQ (0..31)
+        d.CSQ = String(csqCalc);
       }
     }
 
@@ -385,16 +397,144 @@ async function _updateBasicSignalsModal(){
     _sigInflight = false;
   }
 }
+async function openCellIdModal(modemIndex) {
+  if (typeof modemIndex !== 'number') return;
 
-async function openBasicSignalsModal() {
+  let wasMainPollActive = poll.active();
+  if (wasMainPollActive) poll.stop();
+
+  try {
+    let d = await _readSignalsForIndex(modemIndex, true);
+    if (!d) {
+      if (wasMainPollActive && refresh.interval > 0 && !poll.active()) {
+        refresh.lastSec = null;
+        poll.start();
+      }
+      return;
+    }
+
+    let cached = _latestJsonByIndex[modemIndex];
+    if (!cached || !cached.json2) {
+      if (wasMainPollActive && refresh.interval > 0 && !poll.active()) {
+        refresh.lastSec = null;
+        poll.start();
+      }
+      return;
+    }
+
+    let json2 = cached.json2;
+    let cidDec = json2.cid_dec || '0';
+    let cidHex = json2.cid_hex || '0';
+
+    let cidHexClean = cidHex.replace(/^0x/i, '').toUpperCase();
+    let enbh = '', sech = '', enb = 0, sec = 0;
+    let cidHexCellmapper = '', cidDecCellmapper = '';
+
+    if (cidHexClean && cidHexClean.length >= 2) {
+      enbh = cidHexClean.slice(0, -2) || '0';
+      sech = cidHexClean.slice(-2);
+      
+      cidHexCellmapper = enbh + ' ' + sech;
+      
+      enb = parseInt(enbh, 16) || 0;
+      sec = parseInt(sech, 16) || 0;
+      
+      cidDecCellmapper = enb + '/' + sec;
+    }
+
+    const fields = [
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('Cell ID (Decimal)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': cidDec || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('Cell ID (Hexadecimal)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': cidHex || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('eNB ID (Hex)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': enbh || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('Sector ID (Hex)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': sech || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('eNB ID (Decimal)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': enb.toString() || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('Sector ID (Decimal)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': sec.toString() || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('CID HEX (Cellmapper)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': cidHexCellmapper || '-' }, null)
+        )
+      ]),
+      E('div', { 'class': 'cbi-value' }, [
+        E('label', { 'class': 'cbi-value-title' }, [ _('CID DEC (Cellmapper)') ]),
+        E('div', { 'class': 'cbi-value-field' },
+          E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': cidDecCellmapper || '-' }, null)
+        )
+      ])
+    ];
+
+    ui.showModal(_('Cell ID Information') + ' - ' + _('Modem') + ' #' + (modemIndex+1), [
+      E('div', { 'class': 'cbi-section' }, [
+        E('div', { 'class': 'cbi-section-descr' }, _('Detailed Cell ID information with formats for different tools and applications.')),
+        E('div', { 'class': 'cbi-section' },
+          E('div', {}, fields)
+        )
+      ]),
+      E('div', { 'class': 'right' }, [
+        E('button', {
+          'class': 'btn',
+          'click': ui.createHandlerFn(this, function () {
+            ui.hideModal();
+
+            if (wasMainPollActive && refresh.interval > 0 && !poll.active()) {
+              refresh.lastSec = null;
+              poll.start();
+            }
+          })
+        }, _('Close'))
+      ])
+    ], 'cbi-modal');
+
+  } catch (err) {
+    ui.addNotification(null, E('p', {}, _('Error loading Cell ID data: ') + err.message), 'error');
+    
+    if (wasMainPollActive && refresh.interval > 0 && !poll.active()) {
+      refresh.lastSec = null;
+      poll.start();
+    }
+  }
+}
+
+async function openBasicSignalsModal(modemIndex) {
+  if (typeof modemIndex !== 'number') return;
 
   _mainPollWasActive = poll.active();
   if (_mainPollWasActive) poll.stop();
 
   _sigModalOpen = true;
+  _sigModalIndex = modemIndex;
 
   const saved = await getSavedUpdateInterval();
-
   const modalInterval = (saved > 0 ? saved : 5);
   const refreshIntervalMs = modalInterval * 1000;
 
@@ -409,7 +549,7 @@ async function openBasicSignalsModal() {
     _progressValueDiv('bs_ecio',   'EC/IO', '(Energy per Chip / Interference)', 'bs_bar_ecio', false)
   ]);
 
-  ui.showModal(_('Primary band signal levels'), [
+  ui.showModal(_('Primary band signal levels') + ' - ' + _('Modem') + ' #' + (modemIndex+1), [
         E('div', { 'class': 'cbi-section' }, [
         E('div', { 'class': 'cbi-section-descr' },
         _('Updating again in %s second(s).').format(modalInterval)
@@ -421,6 +561,7 @@ async function openBasicSignalsModal() {
         'class': 'btn',
         'click': ui.createHandlerFn(this, function () {
           _sigModalOpen = false;
+          _sigModalIndex = null;
           if (_sigModalTimer) { clearInterval(_sigModalTimer); _sigModalTimer = null; }
           ui.hideModal();
 
@@ -438,24 +579,221 @@ async function openBasicSignalsModal() {
   _sigModalTimer = setInterval(_updateBasicSignalsModal, refreshIntervalMs);
 }
 
-// 1 sec tick
-function updateDataTick(runFetchFn) {
-  let tick = poll.tick || 0;
-  let interval = refresh.interval > 0 ? refresh.interval : 0;
+/* BTS info download */
+async function handleDownloadAction(evOrBtn) {
 
-  let sec = interval > 0 ? interval - (tick % interval || interval) : -1;
+  let modemIndex = null;
+  const t = (evOrBtn && evOrBtn.target) ? evOrBtn.target : evOrBtn;
 
-  if (refresh.labelEl && sec !== refresh.lastSec) {
-    setUpdateMessage(refresh.labelEl, sec);
-    refresh.lastSec = sec;
+  if (typeof evOrBtn === 'number') {
+    modemIndex = evOrBtn;
+  } else if (t) {
+    const dsIdx = t.getAttribute && t.getAttribute('data-modem-index');
+    if (dsIdx !== null && dsIdx !== '') modemIndex = parseInt(dsIdx, 10);
+    if (modemIndex == null) {
+      const id = t.id || '';
+      const m = id.match(/_(\d+)$/);
+      if (m) modemIndex = parseInt(m[1], 10);
+    }
+  }
+  if (modemIndex == null) return;
+
+  let cellElement = document.getElementById('cell_' + modemIndex);
+  let providerElement = document.getElementById('operator_' + modemIndex);
+  let providerValue = providerElement ? (providerElement.textContent || '').trim().toLowerCase() : '';
+  if (!cellElement) return;
+
+  let cellValue = (cellElement.textContent || '').trim();
+  let parts = cellValue.split(/\s+/);
+  let hexPart = parts.length > 1 ? parts[1] : '';
+  let cellHEXNumeric = hexPart ? hexPart.replace(/[()]/g, '') : '';
+
+  let searchsite = '';
+  switch (providerValue) {
+    case 't-mobile': searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=1&mode=std'; break;
+    case 'orange':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=2&mode=std'; break;
+    case 'plus':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=3&mode=std'; break;
+    case 'play':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=4&mode=std'; break;
+    case 'sferia':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=5&mode=std'; break;
+    case 'aero 2':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=8&mode=std'; break;
+    default:         searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=-1&mode=std'; break;
   }
 
-  if (interval && sec === 0 && typeof runFetchFn === 'function') {
-    return runFetchFn();
-  }
+  try {
+    //await fs.exec_direct('/usr/bin/wget', ['-O', '/tmp/bts' + modemIndex + '_file', searchsite]);
+    await fs.exec_direct('/bin/uclient-fetch', ['-O', '/tmp/bts' + modemIndex + '_file', searchsite]);
+    let exists = await fs.stat('/tmp/bts' + modemIndex + '_file');
 
-  return Promise.resolve();
+    if (!exists) {
+      ui.addNotification(null, E('p', _('Failed to download bts data file from site.')), 'error');
+      if (!poll.active()) poll.start();
+      return;
+    }
+
+    let mybts = await fs.exec_direct('/usr/share/modemdata/btsearch.sh', [modemIndex]);
+    if (!mybts) {
+      ui.addNotification(null, E('p', _('Failed to process the downloaded file with btsearch.sh.')), 'error');
+      if (!poll.active()) poll.start();
+      return;
+    }
+
+    let json = JSON.parse(mybts);
+    if (!json || !json.mobile || json.mobile.length <= 2) {
+      if (!poll.active()) poll.start();
+      return;
+    }
+
+    if (poll.active()) poll.stop();
+
+    ui.showModal(
+      E('span', {}, [
+        E('img', {
+          'src': L.resource('icons/mybts.svg'),
+          'style': 'padding-left: 2px; height: 32px; width: auto; display: inline-block; vertical-align: middle;'
+        }),
+        ' ',
+        _('BTS Information'),
+        E('hr')
+      ]),
+      [
+        E('div', { class: 'info-message' }, [
+          L.itemlist(E('span'), [
+            _('Network'),            json.mobile.length > 1 ? json.mobile : '-',
+            _('Location'),           json.location.length > 1 ? json.location : '-',
+            _('Cd.'),                json.locationmax.length > 1 ? json.locationmax : '-',
+            _('Band'),               json.band.length > 1 ? json.band : '-',
+            _('Duplex'),             json.duplex.length > 1 ? json.duplex : '-',
+            _('LAC/TAC'),            json.lac_tac.length > 1 ? json.lac_tac : '-',
+            _('CID'),                json.cid.length > 1 ? json.cid : '-',
+            _('RNC/eNBI'),           json.rnc_enbi.length > 1 ? json.rnc_enbi : '-',
+            _('UC-Id/ECID'),         json.uc_id_ecid.length > 1 ? json.uc_id_ecid : '-',
+            _('StationID'),          json.stationid.length > 1 ? json.stationid : '-',
+            _('Notes Update date'),  json.notes_update_date.length > 1 ? json.notes_update_date : '-'
+          ])
+        ]),
+        E('div', { 'class': 'right' }, [
+          E('button', {
+            'class': 'btn',
+            'click': ui.createHandlerFn(this, function() {
+              ui.hideModal();
+              if (!poll.active()) poll.start();
+            }),
+          }, _('Close')),
+        ]),
+      ]
+    );
+  } catch (err) {
+    ui.addNotification(null, E('p', {}, _('Error: ') + err.message));
+    if (!poll.active()) poll.start();
+  }
 }
+
+function handleAction(evOrBtn) {
+  // wyciągnij index modemu bez helpera
+  let modemIndex = null;
+  const t = (evOrBtn && evOrBtn.target) ? evOrBtn.target : evOrBtn;
+
+  if (typeof evOrBtn === 'number') {
+    modemIndex = evOrBtn;
+  } else if (t) {
+    const dsIdx = t.getAttribute && t.getAttribute('data-modem-index');
+    if (dsIdx !== null && dsIdx !== '') modemIndex = parseInt(dsIdx, 10);
+    if (modemIndex == null) {
+      const id = t.id || '';
+      const m = id.match(/_(\d+)$/);
+      if (m) modemIndex = parseInt(m[1], 10);
+    }
+  }
+  if (modemIndex == null) return;
+
+  return uci.load('modemdata').then(function() {
+    let bts_web    = uci.get('modemdata', '@modemdata[0]', 'website');
+    let bts_action = uci.get('modemdata', '@modemdata[0]', 'btsaction');
+
+    if (bts_web && bts_web.indexOf('btsearch') >= 0) {
+      if (bts_action && bts_action.indexOf('open') >= 0) {
+        let cellElement = document.getElementById('cell_' + modemIndex);
+        let providerElement = document.getElementById('operator_' + modemIndex);
+        let providerValue = providerElement ? (providerElement.textContent || '').trim().toLowerCase() : '';
+
+        if (cellElement) {
+          let cellValue = (cellElement.textContent || '').trim();
+          let parts = cellValue.split(/\s+/);
+          let hexPart = parts.length > 1 ? parts[1] : '';
+          let cellHEXNumeric = hexPart ? hexPart.replace(/[()]/g, '') : '';
+
+          let searchsite = '';
+          switch (providerValue) {
+            case 't-mobile': searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=1&mode=std'; break;
+            case 'orange':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=2&mode=std'; break;
+            case 'plus':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=3&mode=std'; break;
+            case 'play':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=4&mode=std'; break;
+            case 'sferia':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=5&mode=std'; break;
+            case 'aero 2':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=8&mode=std'; break;
+            default:         searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=-1&mode=std'; break;
+          }
+          window.open(searchsite, '_blank');
+        }
+      } else {
+        handleDownloadAction(modemIndex);
+      }
+    }
+
+    if (bts_web && bts_web.indexOf('lteitaly') >= 0) {
+      let cellElement2 = document.getElementById('cell_' + modemIndex);
+      let mncElement = document.getElementById('mnc_' + modemIndex);
+      let mccElement = document.getElementById('mcc_' + modemIndex);
+
+      let cellValue2 = cellElement2 ? (cellElement2.textContent || '').trim() : '';
+      let mncValue = mncElement ? (mncElement.textContent || '').trim() : '';
+      let mccValue = mccElement ? (mccElement.textContent || '').trim() : '';
+      let cellNumeric2 = parseInt((cellValue2.split(/\s+/)[0] || '0'), 10);
+
+      let zzmnc = mncValue || '';
+      let first = zzmnc.slice(0, 1);
+      let second = zzmnc.slice(1, 2);
+      let zzcid = Math.round(cellNumeric2 / 256);
+      let cutmnc = zzmnc;
+
+      if (zzmnc.length == 3) {
+        if (first.indexOf('0') >= 0) cutmnc = zzmnc.slice(1, 3);
+        if (first.indexOf('0') >= 0 && second.indexOf('0') >= 0) cutmnc = zzmnc.slice(2, 3);
+      } else if (zzmnc.length == 2) {
+        first = zzmnc.slice(0, 1);
+        if (first.indexOf('0') >= 0) cutmnc = zzmnc.slice(1, 2);
+        else cutmnc = zzmnc;
+      } else if (zzmnc.length < 2 || (first.indexOf('0') < 0 && second.indexOf('0') < 0)) {
+        cutmnc = zzmnc;
+      }
+
+      window.open('https://lteitaly.it/internal/map.php#bts=' + mccValue + cutmnc + '.' + zzcid);
+    }
+  });
+}
+
+
+function updateTableToValues(ev, modemIndex) {
+  let table = document.getElementById('lteTable_' + modemIndex);
+  if (!table) return;
+
+  let headerCell = table.querySelector('tr:first-child th:last-child');
+  if (!headerCell) return;
+
+  let hasSnr  = ev && (ev.snr  !== undefined && ev.snr  !== null && ev.snr  !== '');
+  let hasSinr = ev && (ev.sinr !== undefined && ev.sinr !== null && ev.sinr !== '');
+
+  if (hasSinr) {
+    headerCell.textContent = _('SINR');
+  } else if (hasSnr) {
+    headerCell.textContent = _('SNR');
+  } else {
+    headerCell.textContent = _('SINR');
+  }
+}
+
+function handleSaveApply() { return null; }
+function handleSave() { return null; }
+function handleReset() { return null; }
 
 function formatDuration(sec) {
   if (sec === '-' || sec === '') return '-';
@@ -586,202 +924,6 @@ function checkOperatorName(t) {
   }
   let u = Object.keys(f).map(function(wo){ return w[f[wo]]; });
   return u.join(' ');
-}
-
-/* BTS info download */
-
-async function handleDownloadAction(ev) {
-  if (ev !== 'godownload') return;
-
-  let activeTab = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
-  if (!activeTab) return;
-
-  let tabIndex = String(activeTab.getAttribute('data-tab') || '').replace('tab', '');
-  let cellElement = document.getElementById('cell_' + tabIndex);
-  let providerElement = document.getElementById('operator_' + tabIndex);
-  let providerValue = providerElement ? (providerElement.textContent || '').trim().toLowerCase() : '';
-
-  if (!cellElement) return;
-
-  let cellValue = (cellElement.textContent || '').trim();
-  let parts = cellValue.split(/\s+/);
-  let hexPart = parts.length > 1 ? parts[1] : '';
-  let cellHEXNumeric = hexPart ? hexPart.replace(/[()]/g, '') : '';
-
-  let searchsite = '';
-  switch (providerValue) {
-    case 't-mobile': searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=1&mode=std'; break;
-    case 'orange':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=2&mode=std'; break;
-    case 'plus':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=3&mode=std'; break;
-    case 'play':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=4&mode=std'; break;
-    case 'sferia':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=5&mode=std'; break;
-    case 'aero 2':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=8&mode=std'; break;
-    default:         searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=-1&mode=std'; break;
-  }
-
-  try {
-    await fs.exec_direct('/usr/bin/wget', ['-O', '/tmp/bts' + tabIndex + '_file', searchsite]);
-    let exists = await fs.stat('/tmp/bts' + tabIndex + '_file');
-
-    if (!exists) {
-      ui.addNotification(null, E('p', _('Failed to download bts data file from site.')), 'error');
-      poll.start();
-      return;
-    }
-
-    let mybts = await fs.exec_direct('/usr/share/modemdata/btsearch.sh', [tabIndex]);
-    if (!mybts) {
-      ui.addNotification(null, E('p', _('Failed to process the downloaded file with btsearch.sh.')), 'error');
-      poll.start();
-      return;
-    }
-
-    let json = JSON.parse(mybts);
-    if (!json || !json.mobile || json.mobile.length <= 2) {
-      poll.start();
-      return;
-    }
-
-    if (poll.active()) poll.stop();
-
-    ui.showModal(
-      E('span', {}, [
-        E('img', {
-          'src': L.resource('icons/mybts.svg'),
-          'style': 'padding-left: 2px; height: 32px; width: auto; display: inline-block; vertical-align: middle;'
-        }),
-        ' ',
-        _('BTS Information'),
-        E('hr')
-      ]),
-      [
-        E('div', { class: 'info-message' }, [
-          L.itemlist(E('span'), [
-            _('Network'),            json.mobile.length > 1 ? json.mobile : '-',
-            _('Location'),           json.location.length > 1 ? json.location : '-',
-            _('Cd.'),                json.locationmax.length > 1 ? json.locationmax : '-',
-            _('Band'),               json.band.length > 1 ? json.band : '-',
-            _('Duplex'),             json.duplex.length > 1 ? json.duplex : '-',
-            _('LAC/TAC'),            json.lac_tac.length > 1 ? json.lac_tac : '-',
-            _('CID'),                json.cid.length > 1 ? json.cid : '-',
-            _('RNC/eNBI'),           json.rnc_enbi.length > 1 ? json.rnc_enbi : '-',
-            _('UC-Id/ECID'),         json.uc_id_ecid.length > 1 ? json.uc_id_ecid : '-',
-            _('StationID'),          json.stationid.length > 1 ? json.stationid : '-',
-            _('Notes Update date'),  json.notes_update_date.length > 1 ? json.notes_update_date : '-'
-          ])
-        ]),
-        E('div', { 'class': 'right' }, [
-          E('button', {
-            'class': 'btn',
-            'click': ui.createHandlerFn(this, function() {
-              ui.hideModal();
-              if (!poll.active()) poll.start();
-            }),
-          }, _('Close')),
-        ]),
-      ]
-    );
-  } catch (err) {
-    ui.addNotification(null, E('p', {}, _('Error: ') + err.message));
-    poll.start();
-  }
-}
-
-function updateTableToValues(ev, modemIndex) {
-  let table = document.getElementById('lteTable_' + modemIndex);
-  if (!table) return;
-
-  let headerCell = table.querySelector('tr:first-child th:last-child');
-  if (!headerCell) return;
-
-  // SNR/SINR
-  let hasSnr  = ev && (ev.snr  !== undefined && ev.snr  !== null && ev.snr  !== '');
-  let hasSinr = ev && (ev.sinr !== undefined && ev.sinr !== null && ev.sinr !== '');
-
-  // COLUMN MOD
-  if (hasSinr) {
-    headerCell.textContent = _('SINR');
-  } else if (hasSnr) {
-    headerCell.textContent = _('SNR');
-  } else {
-    headerCell.textContent = _('SINR'); // domyślnie
-  }
-}
-
-function handleAction(ev) {
-  if (ev !== 'useraction') return;
-
-  return uci.load('modemdata').then(function() {
-    let bts_web = (uci.get('modemdata', '@modemdata[0]', 'website'));
-    let bts_action = (uci.get('modemdata', '@modemdata[0]', 'btsaction'));
-
-    if (bts_web && bts_web.indexOf('btsearch') >= 0) {
-      if (bts_action && bts_action.indexOf('open') >= 0) {
-        let activeTab = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
-        if (activeTab) {
-          let tabIndex = String(activeTab.getAttribute('data-tab') || '').replace('tab', '');
-          let cellElement = document.getElementById('cell_' + tabIndex);
-          let providerElement = document.getElementById('operator_' + tabIndex);
-          let providerValue = providerElement ? (providerElement.textContent || '').trim().toLowerCase() : '';
-
-          if (cellElement) {
-            let cellValue = (cellElement.textContent || '').trim();
-            let parts = cellValue.split(/\s+/);
-            let hexPart = parts.length > 1 ? parts[1] : '';
-            let cellHEXNumeric = hexPart ? hexPart.replace(/[()]/g, '') : '';
-
-            let searchsite = '';
-            switch (providerValue) {
-              case 't-mobile': searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=1&mode=std'; break;
-              case 'orange':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=2&mode=std'; break;
-              case 'plus':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=3&mode=std'; break;
-              case 'play':     searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=4&mode=std'; break;
-              case 'sferia':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=5&mode=std'; break;
-              case 'aero 2':   searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=8&mode=std'; break;
-              default:         searchsite = 'https://www.btsearch.pl/szukaj.php?search=' + cellHEXNumeric + 'h&siec=-1&mode=std'; break;
-            }
-            window.open(searchsite, '_blank');
-          }
-        }
-      } else {
-        handleDownloadAction('godownload');
-      }
-    }
-
-    if (bts_web && bts_web.indexOf('lteitaly') >= 0) {
-      let activeTab2 = document.querySelector('[data-tab].active') || document.querySelector('[data-tab]');
-      if (activeTab2) {
-        let tabIndex2 = String(activeTab2.getAttribute('data-tab') || '').replace('tab', '');
-        let cellElement2 = document.getElementById('cell_' + tabIndex2);
-        let mncElement = document.getElementById('mnc_' + tabIndex2);
-        let mccElement = document.getElementById('mcc_' + tabIndex2);
-
-        let cellValue2 = cellElement2 ? (cellElement2.textContent || '').trim() : '';
-        let mncValue = mncElement ? (mncElement.textContent || '').trim() : '';
-        let mccValue = mccElement ? (mccElement.textContent || '').trim() : '';
-        let cellNumeric2 = parseInt((cellValue2.split(/\s+/)[0] || '0'), 10);
-
-        let zzmnc = mncValue || '';
-        let first = zzmnc.slice(0, 1);
-        let second = zzmnc.slice(1, 2);
-        let zzcid = Math.round(cellNumeric2 / 256);
-        let cutmnc = zzmnc;
-
-        if (zzmnc.length == 3) {
-          if (first.indexOf('0') >= 0) cutmnc = zzmnc.slice(1, 3);
-          if (first.indexOf('0') >= 0 && second.indexOf('0') >= 0) cutmnc = zzmnc.slice(2, 3);
-        } else if (zzmnc.length == 2) {
-          first = zzmnc.slice(0, 1);
-          if (first.indexOf('0') >= 0) cutmnc = zzmnc.slice(1, 2);
-          else cutmnc = zzmnc;
-        } else if (zzmnc.length < 2 || (first.indexOf('0') < 0 && second.indexOf('0') < 0)) {
-          cutmnc = zzmnc;
-        }
-
-        window.open('https://lteitaly.it/internal/map.php#bts=' + mccValue + cutmnc + '.' + zzcid);
-      }
-    }
-  });
 }
 
 function CreateModemMultiverse(modemTabs, sectionsxt) {
@@ -1111,7 +1253,7 @@ function CreateModemMultiverse(modemTabs, sectionsxt) {
           let simStatusValue = '-';
           switch (reg) {
             case '0': simStatusValue = _('Not registered'); break;
-            case '1': simStatusValue = _('Registered'); break;
+            case '1': simStatusValue = _('Registered, home'); break;
             case '2': simStatusValue = _('Searching..'); break;
             case '3': simStatusValue = _('Registering denied'); break;
             case '5': simStatusValue = _('Registered (roaming)'); break;
@@ -1352,7 +1494,6 @@ return view.extend({
       ]);
     }
 
-    // TOOLBAR
     let globalToolbar = E('div', {
       'class': 'right',
       'style': 'width:100%; margin-bottom:8px; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap;'
@@ -1377,19 +1518,6 @@ return view.extend({
       ]),
 
       E('div', { 'style': 'display:flex; align-items:center; gap:1rem; margin-left:auto; flex-wrap:wrap;' }, [
-        E('span', {}, _('Primary band')),
-        E('button', {
-          'class': 'btn cbi-button-neutral',
-          'id': 'basicSignals',
-          'data-tooltip': _('Show signal levels for the primary band'),
-          'click': ui.createHandlerFn(this, function(){ openBasicSignalsModal(); })
-        }, _('☰')),
-        E('span', {}, _('Search BTS')),
-        E('button', {
-          'class': 'cbi-button cbi-button-action important',
-          'id': 'btsSearch',
-          'click': ui.createHandlerFn(this, function () { return handleAction('useraction'); })
-        }, _('Search')),
         E('label', { 'class': 'cbi-checkbox', 'style': 'user-select:none;' }, [
           E('input', {
             'id': 'hide-data',
@@ -1499,12 +1627,32 @@ return view.extend({
         ])
       );
 
+      const perTabToolbar = E('div', {
+        'style': 'display:flex; align-items:center; gap:.5rem; margin-left:auto;'
+      }, [
+        E('span', {}, _('Primary band')),
+        E('button', {
+          'class': 'btn cbi-button-neutral',
+          'id': 'basicSignals_' + i,
+          'data-tooltip': _('Show signal levels'),
+          'click': ui.createHandlerFn(this, function(){ openBasicSignalsModal(i); })
+        }, _('☰')),
+        E('span', {}, _('Search BTS')),
+        E('button', {
+          'class': 'cbi-button cbi-button-action important',
+          'id': 'btsSearch_' + i,
+          'click': ui.createHandlerFn(this, function () { return handleAction(i); })
+        }, _('Search'))
+      ]);
+
       let modemTab = E('div', {
         'data-tab': 'tab' + i,
         'data-tab-title': tabTitle
       }, [
-
-        E('h4', {}, [ _('General Information') ]),
+        E('div', { 'style': 'display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.25rem;' }, [
+          E('h4', {}, [ _('General Information') ]),
+          perTabToolbar
+        ]),
 
         E('div', { 'style': 'display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));margin-bottom:1em;gap:1em' }, [
 
@@ -1514,36 +1662,36 @@ return view.extend({
             E('div', { 'class': 'ifacebox-body', 'style': 'padding:8px' }, [
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px' }, [
                 E('span', {}, _('Signal') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'signal_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': signalId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px' }, [
                 E('span', {}, _('Connection state') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'state_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': stateId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Operator') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'operator_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': operatorId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Country') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'country_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': countryId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Technology') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'mode_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': modeId }, [ '-' ])
               ]),
               E('div', { 'style': 'text-align:left;font-size:11px;border-top:1px solid var(--border-color-medium);padding-top:8px' }, [
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('Connection time') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': 'connst_' + i }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': connstId }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:2px' }, [
                   E('span', '▲ ' + _('Sent') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': 'tx_' + i }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': txId }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between' }, [
                   E('span', '▼ ' + _('Received') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': 'rx_' + i }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': rxId }, [ '-' ])
                 ])
               ])
             ])
@@ -1553,29 +1701,25 @@ return view.extend({
           E('div', { 'class': 'ifacebox', 'style': 'margin:.25em;width:100%' }, [
             E('div', { 'class': 'ifacebox-head', 'style': 'font-weight:bold;background:#f8f8f8;padding:8px' }, [ _('SIM Card') ]),
             E('div', { 'class': 'ifacebox-body', 'style': 'padding:8px' }, [
-              E('div', { 'id': 'slotDiv_' + i, 'style': 'display:none;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
+              E('div', { 'id': slotDivId, 'style': 'display:none;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Slot in use') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'slot_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': slotId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('SIM status') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:75%; display:inline-block; cursor:pointer;',
-                  'id': 'sim_' + i, 'title': '-'
+                  'id': simId, 'title': '-'
                 }, [ '-' ])
               ]),
               E('div', { 'style': 'text-align:left;font-size:11px;border-top:1px solid var(--border-color-medium);padding-top:8px' }, [
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('IMSI') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': 'imsi_' + i }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': imsiId }, [ '-' ])
                 ]),
                 E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                   E('span', {}, _('ICCID') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': 'iccid_' + i }, [ '-' ])
-                ]),
-                E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
-                  E('span', {}, _('Modem IMEI') + ':'),
-                  E('span', { 'style': 'font-weight:500', 'id': 'imei_' + i }, [ '-' ])
+                  E('span', { 'style': 'font-weight:500', 'id': iccidId }, [ '-' ])
                 ])
               ])
             ])
@@ -1589,19 +1733,23 @@ return view.extend({
                 E('span', {}, _('Modem type') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%; display:inline-block; cursor:pointer;',
-                  'id': 'modemtype_' + i, 'title': '-'
+                  'id': modemtypeId, 'title': '-'
                 }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Revision / FW') + ':'),
                 E('span', {
                   'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%; display:inline-block; cursor:pointer;',
-                  'id': 'firmware_' + i, 'title': '-'
+                  'id': firmwareId, 'title': '-'
                 }, [ '-' ])
               ]),
-              E('div', { 'id': 'tempDiv_' + i, 'style': 'display:none;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
+                E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
+                  E('span', {}, _('Modem IMEI') + ':'),
+                  E('span', { 'style': 'font-weight:500', 'id': imeiId }, [ '-' ])
+                ]),
+              E('div', { 'id': tempDivId, 'style': 'display:none;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Chip Temperature') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'temp_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': tempId }, [ '-' ])
               ])
             ])
           ]),
@@ -1610,28 +1758,30 @@ return view.extend({
           E('div', { 'class': 'ifacebox', 'style': 'margin:.25em;width:100%' }, [
             E('div', { 'class': 'ifacebox-head', 'style': 'font-weight:bold;background:#f8f8f8;padding:8px' }, [ _('Cell Information') ]),
             E('div', { 'class': 'ifacebox-body', 'style': 'padding:8px' }, [
-              E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
-                E('span', {}, _('Cell ID') + ':'),
-                E('span', {
-                  'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:42%; display:inline-block; cursor:pointer;',
-                  'id': 'cell_' + i, 'title': '-'
-                }, [ '-' ])
-              ]),
+            E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
+              E('span', {}, _('Cell ID') + ':'),
+              E('span', {
+                'style': 'font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:42%; display:inline-block; cursor:pointer;',
+                'id': cellId, 
+                'title': _('Click to view Cell ID details'),
+                'click': ui.createHandlerFn(this, function() { openCellIdModal(i); })
+              }, [ '-' ])
+            ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('TAC') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'tac_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': tacId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('LAC') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'lac_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': lacId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Mobile Country Code') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'mcc_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': mccId }, [ '-' ])
               ]),
               E('div', { 'style': 'display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px' }, [
                 E('span', {}, _('Mobile Network Code') + ':'),
-                E('span', { 'style': 'font-weight:500', 'id': 'mnc_' + i }, [ '-' ])
+                E('span', { 'style': 'font-weight:500', 'id': mncId }, [ '-' ])
               ])
             ])
           ])
@@ -1651,32 +1801,32 @@ return view.extend({
         forced_plmn_op: fplmn,
         mbim_op: rmbim,
         modemdata: rmethod,
-        signalId: 'signal_' + i,
-        connstId: 'connst_' + i,
-        operatorId: 'operator_' + i,
-        countryId: 'country_' + i,
-        simId: 'sim_' + i,
-        rxId: 'rx_' + i,
-        txId: 'tx_' + i,
-        slotId: 'slot_' + i,
-        slotDivId: 'slotDiv_' + i,
-        tempDivId: 'tempDiv_' + i,
-        iccidId: 'iccid_' + i,
-        imeiId: 'imei_' + i,
-        imsiId: 'imsi_' + i,
-        modemtypeId: 'modemtype_' + i,
-        firmwareId: 'firmware_' + i,
-        tempId: 'temp_' + i,
-        cellId: 'cell_' + i,
-        lacId: 'lac_' + i,
-        tacId: 'tac_' + i,
-        mccId: 'mcc_' + i,
-        mncId: 'mnc_' + i,
-        stateId: 'state_' + i,
-        modeId: 'mode_' + i,
-        bandshowId: 'bandshow_' + i,
-        wcdmaTableId: 'wcdmaTable_' + i,
-        lteTableId: 'lteTable_' + i
+        signalId: signalId,
+        connstId: connstId,
+        operatorId: operatorId,
+        countryId: countryId,
+        simId: simId,
+        rxId: rxId,
+        txId: txId,
+        slotId: slotId,
+        slotDivId: slotDivId,
+        tempDivId: tempDivId,
+        iccidId: iccidId,
+        imeiId: imeiId,
+        imsiId: imsiId,
+        modemtypeId: modemtypeId,
+        firmwareId: firmwareId,
+        tempId: tempId,
+        cellId: cellId,
+        lacId: lacId,
+        tacId: tacId,
+        mccId: mccId,
+        mncId: mncId,
+        stateId: stateId,
+        modeId: modeId,
+        bandshowId: bandshowId,
+        wcdmaTableId: wcdmaTableId,
+        lteTableId: lteTableId
       });
     }
 
@@ -1714,7 +1864,7 @@ return view.extend({
       globalToolbar,
       tabsContainer
     ]);
-  },
+  }, 
 
   handleSaveApply: null,
   handleSave     : null,

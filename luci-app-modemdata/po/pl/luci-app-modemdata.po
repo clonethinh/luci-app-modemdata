@@ -223,8 +223,8 @@ msgstr "Status SIM"
 msgid "Not registered"
 msgstr "Nie zalogowana do sieci"
 
-msgid "Registered"
-msgstr "Zalogowana do sieci"
+msgid "Registered, home"
+msgstr "Zalogowana do sieci macierzystej"
 
 msgid "Registered (roaming)"
 msgstr "Zalogowana do sieci (roaming)"
@@ -622,8 +622,8 @@ msgstr "Wczytywanie danych..."
 msgid "Waiting..."
 msgstr "Czekam..."
 
-msgid "Show signal levels for the primary band"
-msgstr "Pokaż poziomy sygnałów dla pasma podstawowego"
+msgid "Show signal levels"
+msgstr "Pokaż poziomy sygnałów"
 
 msgid "Primary band signal levels"
 msgstr "Poziomy sygnałów dla pasma podstawowego"
@@ -639,4 +639,34 @@ msgstr "Dostępne opcje"
 
 msgid "Device not found"
 msgstr "Urządzenia nie znaleziono"
+
+msgid "Click to view Cell ID details"
+msgstr "Kliknij, aby wyświetlić szczegóły identyfikatora komórki"
+
+msgid "Cell ID (Decimal)"
+msgstr "Identyfikator komórki (dziesiętny)"
+
+msgid "Cell ID (Hexadecimal)"
+msgstr "Identyfikator komórki (szesnastkowy)"
+
+msgid "eNB ID (Hex)"
+msgstr "Identyfikator eNB (szesnastkowy)"
+
+msgid "Sector ID (Hex)"
+msgstr "Identyfikator sektora (szesnastkowy)"
+
+msgid "eNB ID (Decimal)"
+msgstr "Identyfikator eNB (dziesiętny)"
+
+msgid "Sector ID (Decimal)"
+msgstr "Identyfikator sektora (dziesiętny)"
+
+msgid "CID HEX (Cellmapper)"
+msgstr "CID HEX (Cellmapper)"
+
+msgid "Cell ID Information"
+msgstr "Informacje o identyfikatorze komórki"
+
+msgid "Detailed Cell ID information with formats for different tools and applications."
+msgstr "Szczegółowe informacje o identyfikatorze komórki w formatach dla różnych narzędzi i aplikacji."
 

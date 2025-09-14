@@ -42,6 +42,7 @@
 				"/bin/cat": [ "exec" ],
 				"/bin/sh": [ "exec" ],
 				"/usr/bin/wget": [ "exec" ],
+				"/bin/uclient-fetch": [ "exec" ],
 				"/bin/ls /dev": [ "exec" ],
 				"/bin/sh /usr/bin/md_serial_ecm": [ "exec" ],
 				"/etc/defmodems": [ "write" ],
